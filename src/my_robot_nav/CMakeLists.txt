@@ -7,6 +7,8 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
+install(PROGRAMS scripts/qos_relay.py scripts/lifecycle_activator.py DESTINATION lib/${PROJECT_NAME})
+
 install(
   DIRECTORY config launch maps
   DESTINATION share/${PROJECT_NAME}
