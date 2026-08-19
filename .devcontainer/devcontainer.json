@@ -1,0 +1,45 @@
+{
+  "name": "ROS 2 Jazzy Robotics DevContainer",
+  "initializeCommand": "xhost +local:root || true",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "runArgs": [
+    "--net=host",
+    "--ipc=host",
+    "--privileged",
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+    "-v", "/dev:/dev:rw",
+    "-e", "DISPLAY=${localEnv:DISPLAY}",
+    "-e", "QT_X11_NO_MITSHM=1",
+    "-e", "ROS_DOMAIN_ID=42",
+    "-e", "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+  ],
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "ROS_DOMAIN_ID": "42",
+    "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-iot.vscode-ros",
+        "ms-vscode.cpptools",
+        "ms-python.python",
+        "redhat.vscode-xml",
+        "smilerobotics.urdf",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "ros.rosDistro": "jazzy"
+      }
+    }
+  },
+  "remoteUser": "ros",
+  "workspaceFolder": "/home/ros/my_robot_ws",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/ros/my_robot_ws,type=bind,consistency=cached",
+  "postCreateCommand": "sudo rosdep update && bash /home/ros/my_robot_ws/scripts/install_deps.sh"
+}

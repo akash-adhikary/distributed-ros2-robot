@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="my_robot">
+
+  <!-- Include Helper Macros -->
+  <xacro:include filename="inertial_macros.xacro" />
+
+  <!-- Include Core Chassis and Wheels -->
+  <xacro:include filename="robot_core.xacro" />
+
+  <!-- Include Gazebo Differential Drive Controller -->
+  <xacro:include filename="gazebo_control.xacro" />
+
+  <!-- Include Slamtec RPLiDAR Sensor -->
+  <xacro:include filename="lidar.xacro" />
+
+</robot>
