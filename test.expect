@@ -1,0 +1,7 @@
+#!/usr/bin/expect -f
+spawn ssh -o StrictHostKeyChecking=no arduino@192.168.1.17 "sudo -S docker ps -a"
+expect "password:"
+send "Askaban78@#\r"
+expect "password for arduino:"
+send "Askaban78@#\r"
+expect eof
