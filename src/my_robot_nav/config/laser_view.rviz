@@ -32,24 +32,24 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
+        Max Value: 6.0
+        Min Value: 0.05
         Value: true
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/LaserScan
       Color: 255; 255; 255
-      Color Transformer: FlatColor
+      Color Transformer: Intensity
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
+      Max Color: 255; 0; 0
+      Min Color: 0; 0; 255
       Name: LaserScan
       Position Tolerance: 0.1
       Queue Size: 10
       Selectable: true
-      Size (Pixels): 3
+      Size (Pixels): 5
       Size (m): 0.05
       Style: Flat Squares
       Topic:
@@ -59,11 +59,11 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /scan
       Use Fixed Frame: true
-      Use rainbow: false
+      Use rainbow: true
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 30; 30; 30
     Fixed Frame: laser
     Frame Rate: 30
   Name: root
