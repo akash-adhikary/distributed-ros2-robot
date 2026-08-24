@@ -21,7 +21,7 @@ class QoSRelay(Node):
         self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, qos)
         self.pub_scan = self.create_publisher(LaserScan, '/scan_reliable', pub_qos)
         
-        self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, qos)
+        self.sub_imu = self.create_subscription(Imu, '/imu/data_raw', self.imu_cb, qos)
         self.pub_imu = self.create_publisher(Imu, '/imu_reliable', pub_qos)
         
         self.get_logger().info('QoS Relay started: timestamp sync for /scan and /imu/data')
