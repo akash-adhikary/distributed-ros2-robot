@@ -222,12 +222,24 @@ function apiCall(endpoint, payload = null) {
     if (payload) opts.body = JSON.stringify(payload);
 
     fetch(endpoint, opts)
-        .then(res => res.json())
+        .then(async res => {
+            const rawText = await res.text();
+            try {
+                return JSON.parse(rawText);
+            } catch (e) {
+                // If HTML or plain text is returned
+                const cleanText = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                return {
+                    success: res.ok,
+                    message: cleanText ? cleanText.substring(0, 120) : `HTTP ${res.status} ${res.statusText}`
+                };
+            }
+        })
         .then(data => {
-            showToast(data.message, data.success);
+            showToast(data.message || 'Action executed', data.success !== false);
         })
         .catch(err => {
-            showToast(`API Error: ${err}`, false);
+            showToast(`Network Error: ${err.message || err}`, false);
         });
 }
 
@@ -241,13 +253,14 @@ function saveCurrentMap() {
     const mapName = prompt("Enter name for map file (e.g. room_map_1):", `map_${Date.now()}`);
     if (mapName) {
         apiCall('/api/slam/save_map', { name: mapName });
-        setTimeout(loadSavedMaps, 2000);
+        setTimeout(loadSavedMaps, 2500);
     }
 }
 
 function regularizeLatestMap() {
+    showToast("Snapping map to 90° boxy walls...", true);
     apiCall('/api/slam/regularize_map');
-    setTimeout(loadSavedMaps, 2000);
+    setTimeout(loadSavedMaps, 2500);
 }
 
 function loadSavedMaps() {
