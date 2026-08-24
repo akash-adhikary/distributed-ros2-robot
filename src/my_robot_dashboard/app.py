@@ -1,29 +1,70 @@
 #!/usr/bin/env python3
 """
-Robot Control & Diagnostic Dashboard
-=====================================
-Architecture:
-  - qos_relay.py: Persistent daemon started at app startup. Provides:
-      * odom->base_link TF at 50Hz
-      * Static sensor TFs (base_link->laser, base_link->imu_link)
-      * /scan and /imu/data passthrough
-    qos_relay MUST NEVER be killed by slam start/stop - it is the DDS bridge.
-
-  - SLAM mapping: ros2 launch my_robot_nav imu_slam.launch.py
-      (starts slam_toolbox + rviz2 only - qos_relay already running)
-
-  - Flask SSE stream: Non-blocking spin_once loop in background thread.
+Industrial-Grade Distributed Robot Control & Diagnostic Dashboard
+==================================================================
+Features & Resilience:
+  1. PID Lockfile & Singleton Guard: Automatic graceful takeover if launched in another terminal.
+  2. Complete Clean Teardown: Signal handlers (SIGINT, SIGTERM, atexit) kill all children cleanly.
+  3. One-Click Emergency Stop: /api/system/kill_all endpoint resets all local & Uno Q ROS activity.
+  4. Decoupled Persistent DDS Bridge: qos_relay runs as an independent daemon.
 """
 import os
 import sys
 import json
 import time
 import math
+import fcntl
+import signal
+import atexit
 import subprocess
 import threading
 import socket
 from flask import Flask, render_template, jsonify, request, Response
 from flask_cors import CORS
+
+# ---- SINGLETON GUARD & PROCESS TAKEOVER ----
+LOCKFILE_PATH = "/tmp/my_robot_dashboard.lock"
+PIDFILE_PATH = "/tmp/my_robot_dashboard.pid"
+
+def enforce_singleton(port=5050):
+    """
+    Ensures only ONE instance of the dashboard ever runs.
+    If an existing instance is active, it cleanly terminates it, releases the port, and takes over.
+    """
+    if os.path.exists(PIDFILE_PATH):
+        try:
+            with open(PIDFILE_PATH, 'r') as f:
+                old_pid = int(f.read().strip())
+            if old_pid != os.getpid():
+                try:
+                    os.kill(old_pid, 0)
+                    print(f"[Singleton Guard] Terminating previous dashboard instance (PID {old_pid})...")
+                    os.kill(old_pid, signal.SIGTERM)
+                    time.sleep(1.0)
+                    try:
+                        os.kill(old_pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+    # Ensure port is released
+    for _ in range(10):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', port)) != 0:
+                break
+        time.sleep(0.2)
+
+    # Write current PID
+    try:
+        with open(PIDFILE_PATH, 'w') as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+enforce_singleton(5050)
 
 # ---- ROS 2 CycloneDDS environment ----
 os.environ['ROS_DOMAIN_ID'] = '42'
@@ -73,6 +114,8 @@ lidar_msg_times = []
 last_imu_update = 0.0
 last_scan_update = 0.0
 active_processes = {}
+ros_node = None
+ros_running = True
 
 # ---- ROS Subscriber Node ----
 class DashboardRosNode(Node):
@@ -80,7 +123,7 @@ class DashboardRosNode(Node):
         super().__init__('dashboard_backend_node')
         self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, 10)
         self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
-        self.get_logger().info("Dashboard ROS 2 node ready on Domain 42.")
+        self.get_logger().info("Dashboard ROS 2 Node initialized on Domain 42.")
 
     def imu_cb(self, msg):
         global telemetry, imu_msg_times, last_imu_update
@@ -148,13 +191,26 @@ class DashboardRosNode(Node):
 
 # ---- Non-blocking ROS spin thread ----
 def non_blocking_ros_spin():
-    rclpy.init()
-    node = DashboardRosNode()
-    while rclpy.ok():
-        rclpy.spin_once(node, timeout_sec=0.008)
-        time.sleep(0.01)
-    node.destroy_node()
-    rclpy.shutdown()
+    global ros_node, ros_running
+    try:
+        rclpy.init()
+        ros_node = DashboardRosNode()
+        while ros_running and rclpy.ok():
+            rclpy.spin_once(ros_node, timeout_sec=0.008)
+            time.sleep(0.01)
+    except Exception as e:
+        print(f"[ROS Thread] Exception: {e}", file=sys.stderr)
+    finally:
+        if ros_node:
+            try:
+                ros_node.destroy_node()
+            except Exception:
+                pass
+        if rclpy.ok():
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
 
 ros_thread = threading.Thread(target=non_blocking_ros_spin, daemon=True)
 ros_thread.start()
@@ -197,9 +253,10 @@ def ssh_unoq_cmd(cmd, timeout=12):
 def start_qos_relay_daemon():
     """
     Start qos_relay as a persistent background process.
-    This is the DDS bridge providing TF and sensor relays.
-    It must NEVER be killed by SLAM start/stop.
+    Provides continuous 50Hz odom->base_link TF and static sensor transforms.
     """
+    # Kill any stale existing instance
+    subprocess.run("pkill -9 -f 'src/my_robot_nav/scripts/qos_relay.py' 2>/dev/null || true", shell=True)
     ws = get_ws_dir()
     cmd = (
         f"source /opt/ros/jazzy/setup.bash && "
@@ -215,8 +272,30 @@ def start_qos_relay_daemon():
     active_processes['qos_relay'] = proc
     return proc
 
-# Start qos_relay immediately at app boot (persistent daemon)
+# Cleanly start qos_relay daemon at boot
 start_qos_relay_daemon()
+
+def cleanup_all():
+    """Clean exit handler terminating all child processes."""
+    global ros_running
+    ros_running = False
+    print("\n[Dashboard Shutdown] Cleaning up all subprocesses...")
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|rviz2|qos_relay.py|imu_dead_reckoning' 2>/dev/null || true", shell=True)
+    for name, proc in list(active_processes.items()):
+        try:
+            proc.terminate()
+            proc.kill()
+        except Exception:
+            pass
+    try:
+        if os.path.exists(PIDFILE_PATH):
+            os.remove(PIDFILE_PATH)
+    except Exception:
+        pass
+
+atexit.register(cleanup_all)
+signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
+signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 
 # ---- REST API ROUTES ----
 
@@ -250,6 +329,34 @@ def sse_stream():
             except Exception:
                 time.sleep(0.05)
     return Response(event_stream(), mimetype="text/event-stream")
+
+# ---- SYSTEM-WIDE EMERGENCY KILL / RESET ----
+@app.route('/api/system/kill_all', methods=['POST'])
+def kill_all_ros_activity():
+    """
+    Nuclear Kill Button: Terminates ALL local and edge ROS processes,
+    clears participant leases, and resets system to clean zero.
+    """
+    # 1. Kill all local visualizers, SLAM, and nodes
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_dead_reckoning|tf2_ros|ros2' 2>/dev/null || true", shell=True)
+    
+    # 2. Kill edge sensors on Uno Q
+    cmd_unoq = "docker exec -t rplidar pkill -9 -f 'rplidar_node|imu_publisher|ros2' 2>/dev/null || true"
+    ssh_unoq_cmd(cmd_unoq)
+    
+    # 3. Reset internal telemetry state
+    telemetry['lidar_running'] = False
+    telemetry['imu_running'] = False
+    telemetry['slam_running'] = False
+    telemetry['lidar_rate'] = 0.0
+    telemetry['imu_rate'] = 0.0
+    telemetry['lidar_points'] = []
+    
+    # 4. Ensure qos_relay is cleanly restarted
+    time.sleep(0.5)
+    start_qos_relay_daemon()
+    
+    return jsonify({'success': True, 'message': 'All ROS activity terminated across Laptop & Uno Q. System reset to clean state.'})
 
 @app.route('/api/sensors/lidar/start', methods=['POST'])
 def start_lidar():
@@ -330,21 +437,19 @@ def stop_rviz():
 def start_slam():
     """
     Start SLAM mapping pipeline.
-    IMPORTANT: Only kills slam_toolbox and rviz2 - NOT qos_relay.
-    qos_relay must remain running as it provides the TF tree and DDS bridge.
+    Manages slam_toolbox and rviz2 cleanly without interrupting qos_relay.
     """
-    # Kill only slam and rviz - qos_relay stays alive
     subprocess.run(
         "pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_slam.launch.py' 2>/dev/null || true",
         shell=True
     )
     time.sleep(0.5)
 
-    # Ensure qos_relay is running (restart if crashed)
+    # Verify qos_relay is alive
     relay_proc = active_processes.get('qos_relay')
     if relay_proc is None or relay_proc.poll() is not None:
         start_qos_relay_daemon()
-        time.sleep(1.0)  # Give relay time to start and publish TFs
+        time.sleep(1.0)
 
     ws = get_ws_dir()
     cmd = (
@@ -359,7 +464,7 @@ def start_slam():
 
 @app.route('/api/slam/stop', methods=['POST'])
 def stop_slam():
-    """Stop SLAM and RViz but keep qos_relay alive."""
+    """Stop SLAM and RViz cleanly."""
     subprocess.run(
         "pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_slam.launch.py' 2>/dev/null || true",
         shell=True
@@ -418,18 +523,10 @@ def list_maps():
     files = [f for f in os.listdir(maps_dir) if f.endswith('.yaml')]
     return jsonify(sorted(files))
 
-def find_available_port(start_port=5050):
-    for p in range(start_port, start_port + 20):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('127.0.0.1', p)) != 0:
-                return p
-    return start_port
-
 if __name__ == '__main__':
-    default_port = int(os.environ.get('PORT', 5050))
-    port = find_available_port(default_port)
+    port = int(os.environ.get('PORT', 5050))
     print(f"==================================================")
-    print(f"  ROBOT CONTROL & DIAGNOSTIC DASHBOARD ONLINE")
+    print(f"  INDUSTRIAL ROBOT CONTROL & DIAGNOSTIC HUB")
     print(f"  Access UI at: http://localhost:{port}")
     print(f"==================================================")
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

@@ -11,8 +11,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         # 1. SLAM Toolbox: Real-Time Async Mapping
-        #    qos_relay is started separately (persistent daemon via app.py)
-        #    so it is NOT killed/restarted when SLAM restarts
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
@@ -21,7 +19,7 @@ def generate_launch_description():
             parameters=[slam_params_file]
         ),
 
-        # 2. Lifecycle Activator (configure + activate slam_toolbox after 2s)
+        # 2. Deterministic Lifecycle Activator (configure + activate)
         TimerAction(
             period=2.0,
             actions=[
@@ -32,16 +30,16 @@ def generate_launch_description():
                          'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; '
                          'export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml; '
                          'ros2 lifecycle set /slam_toolbox configure 2>/dev/null || true; '
-                         'sleep 0.5; '
+                         'sleep 1.0; '
                          'ros2 lifecycle set /slam_toolbox activate 2>/dev/null || true'],
                     output='screen'
                 )
             ]
         ),
 
-        # 3. RViz2 Visualizer (after slam_toolbox is active)
+        # 3. RViz2 Visualizer (after slam_toolbox transitions to active)
         TimerAction(
-            period=3.5,
+            period=4.5,
             actions=[
                 Node(
                     package='rviz2',

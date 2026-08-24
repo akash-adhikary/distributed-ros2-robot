@@ -49,6 +49,9 @@
             <button onclick="changeRobotIp()" class="badge bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 cursor-pointer">
                 <i class="fa-solid fa-network-wired mr-1.5"></i> <span id="ip-display">192.168.1.17</span>
             </button>
+            <button onclick="confirmAction('Emergency Stop: Terminate ALL active ROS nodes across Laptop and Uno Q?', '/api/system/kill_all')" class="badge bg-red-950/80 hover:bg-red-800 text-red-300 border border-red-800 cursor-pointer transition">
+                <i class="fa-solid fa-power-off mr-1.5 text-red-400"></i> Kill All ROS Activity
+            </button>
             <span id="unoq-status" class="badge bg-slate-800 text-slate-400 border border-slate-700">
                 <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Uno Q Checking...
             </span>
@@ -106,8 +109,8 @@
 
                 <!-- Uno Q System Operations -->
                 <div class="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50">
-                    <span class="font-medium text-sm text-slate-200 block mb-3">Uno Q System Ops</span>
-                    <div class="grid grid-cols-2 gap-2">
+                    <span class="font-medium text-sm text-slate-200 block mb-3">System & Hardware Operations</span>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
                         <button onclick="apiCall('/api/sensors/router/restart')" class="bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
                             <i class="fa-solid fa-rotate mr-1.5"></i> Reset Bridge
                         </button>
@@ -115,6 +118,9 @@
                             <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Reboot Uno Q
                         </button>
                     </div>
+                    <button onclick="confirmAction('Terminate ALL active ROS nodes across Laptop and Uno Q?', '/api/system/kill_all')" class="w-full bg-rose-950/80 hover:bg-rose-800 text-rose-200 text-xs font-semibold py-2 px-3 rounded-lg border border-rose-800 transition duration-200 flex items-center justify-center">
+                        <i class="fa-solid fa-triangle-exclamation mr-1.5 text-rose-400"></i> Kill All Active ROS Nodes
+                    </button>
                 </div>
             </div>
 
