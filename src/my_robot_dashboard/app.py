@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""
+Robot Control & Diagnostic Dashboard
+=====================================
+Architecture:
+  - qos_relay.py: Persistent daemon started at app startup. Provides:
+      * odom->base_link TF at 50Hz
+      * Static sensor TFs (base_link->laser, base_link->imu_link)
+      * /scan and /imu/data passthrough
+    qos_relay MUST NEVER be killed by slam start/stop - it is the DDS bridge.
+
+  - SLAM mapping: ros2 launch my_robot_nav imu_slam.launch.py
+      (starts slam_toolbox + rviz2 only - qos_relay already running)
+
+  - Flask SSE stream: Non-blocking spin_once loop in background thread.
+"""
 import os
 import sys
 import json
@@ -10,7 +25,7 @@ import socket
 from flask import Flask, render_template, jsonify, request, Response
 from flask_cors import CORS
 
-# Configure ROS 2 CycloneDDS environment
+# ---- ROS 2 CycloneDDS environment ----
 os.environ['ROS_DOMAIN_ID'] = '42'
 os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
 if os.path.exists('/home/ros/my_robot_ws/cyclonedds.xml'):
@@ -59,12 +74,13 @@ last_imu_update = 0.0
 last_scan_update = 0.0
 active_processes = {}
 
+# ---- ROS Subscriber Node ----
 class DashboardRosNode(Node):
     def __init__(self):
         super().__init__('dashboard_backend_node')
         self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, 10)
         self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
-        self.get_logger().info("Dashboard ROS 2 Subscriber Node initialized on Domain 42.")
+        self.get_logger().info("Dashboard ROS 2 node ready on Domain 42.")
 
     def imu_cb(self, msg):
         global telemetry, imu_msg_times, last_imu_update
@@ -98,8 +114,16 @@ class DashboardRosNode(Node):
         cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
         telemetry['yaw_deg'] = round(math.atan2(siny_cosp, cosy_cosp) * 180.0 / math.pi, 1)
 
-        telemetry['acc'] = {'x': round(msg.linear_acceleration.x, 2), 'y': round(msg.linear_acceleration.y, 2), 'z': round(msg.linear_acceleration.z, 2)}
-        telemetry['gyro'] = {'x': round(msg.angular_velocity.x, 2), 'y': round(msg.angular_velocity.y, 2), 'z': round(msg.angular_velocity.z, 2)}
+        telemetry['acc'] = {
+            'x': round(msg.linear_acceleration.x, 2),
+            'y': round(msg.linear_acceleration.y, 2),
+            'z': round(msg.linear_acceleration.z, 2)
+        }
+        telemetry['gyro'] = {
+            'x': round(msg.angular_velocity.x, 2),
+            'y': round(msg.angular_velocity.y, 2),
+            'z': round(msg.angular_velocity.z, 2)
+        }
 
     def scan_cb(self, msg):
         global telemetry, lidar_msg_times, last_scan_update
@@ -122,6 +146,7 @@ class DashboardRosNode(Node):
                 points.append([round(angle, 3), round(r, 2)])
         telemetry['lidar_points'] = points
 
+# ---- Non-blocking ROS spin thread ----
 def non_blocking_ros_spin():
     rclpy.init()
     node = DashboardRosNode()
@@ -133,6 +158,24 @@ def non_blocking_ros_spin():
 
 ros_thread = threading.Thread(target=non_blocking_ros_spin, daemon=True)
 ros_thread.start()
+
+# ---- Helper utilities ----
+def get_ws_dir():
+    if os.path.exists('/home/ros/my_robot_ws'):
+        return '/home/ros/my_robot_ws'
+    return '/home/bliss/my_robot_ws'
+
+def get_exec_env():
+    env = os.environ.copy()
+    env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
+    env['QT_X11_NO_MITSHM'] = '1'
+    env['ROS_DOMAIN_ID'] = '42'
+    env['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+    ws = get_ws_dir()
+    cyclone = f'{ws}/cyclonedds.xml'
+    if os.path.exists(cyclone):
+        env['CYCLONEDDS_URI'] = f'file://{cyclone}'
+    return env
 
 def ssh_unoq_cmd(cmd, timeout=12):
     ip = robot_config['ip']
@@ -151,19 +194,31 @@ def ssh_unoq_cmd(cmd, timeout=12):
         telemetry['unoq_online'] = False
         return False, str(e)
 
-def get_exec_env():
-    env = os.environ.copy()
-    env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
-    env['QT_X11_NO_MITSHM'] = '1'
-    env['ROS_DOMAIN_ID'] = '42'
-    env['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
-    if os.path.exists('/home/ros/my_robot_ws/cyclonedds.xml'):
-        env['CYCLONEDDS_URI'] = 'file:///home/ros/my_robot_ws/cyclonedds.xml'
-    elif os.path.exists('/home/bliss/my_robot_ws/cyclonedds.xml'):
-        env['CYCLONEDDS_URI'] = 'file:///home/bliss/my_robot_ws/cyclonedds.xml'
-    return env
+def start_qos_relay_daemon():
+    """
+    Start qos_relay as a persistent background process.
+    This is the DDS bridge providing TF and sensor relays.
+    It must NEVER be killed by SLAM start/stop.
+    """
+    ws = get_ws_dir()
+    cmd = (
+        f"source /opt/ros/jazzy/setup.bash && "
+        f"source {ws}/install/setup.bash 2>/dev/null || true && "
+        f"python3 {ws}/src/my_robot_nav/scripts/qos_relay.py"
+    )
+    proc = subprocess.Popen(
+        cmd, shell=True, executable='/bin/bash',
+        env=get_exec_env(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    active_processes['qos_relay'] = proc
+    return proc
 
-# ----------------- REST API ROUTES ----------------- #
+# Start qos_relay immediately at app boot (persistent daemon)
+start_qos_relay_daemon()
+
+# ---- REST API ROUTES ----
 
 @app.route('/')
 def index():
@@ -189,7 +244,7 @@ def sse_stream():
             try:
                 data = json.dumps(telemetry)
                 yield f"data: {data}\n\n"
-                time.sleep(0.04) # Steady 25 FPS
+                time.sleep(0.04)  # 25 FPS
             except GeneratorExit:
                 break
             except Exception:
@@ -202,10 +257,11 @@ def start_lidar():
     echo 'Askaban78@#' | sudo -S chmod 666 /dev/ttyUSB0 2>/dev/null || true
     docker start rplidar
     docker exec -t rplidar pkill -f 'rplidar_node' 2>/dev/null || true
+    sleep 1
     docker exec -d rplidar bash -c 'source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file:///ws/cyclonedds.xml && ros2 launch rplidar_ros rplidar_c1_launch.py serial_port:=/dev/ttyUSB0'
     """
     success, msg = ssh_unoq_cmd(cmd)
-    return jsonify({'success': success, 'message': 'RPLidar C1 launch command issued' if success else msg})
+    return jsonify({'success': success, 'message': 'RPLidar C1 started' if success else msg})
 
 @app.route('/api/sensors/lidar/stop', methods=['POST'])
 def stop_lidar():
@@ -219,10 +275,11 @@ def start_imu():
     cmd = """
     docker start rplidar
     docker exec -t rplidar pkill -f 'imu_publisher' 2>/dev/null || true
+    sleep 1
     docker exec -d rplidar bash -c 'source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file:///ws/cyclonedds.xml && python3 /ws/src/bno08x_ros/bno08x_ros/imu_publisher.py'
     """
     success, msg = ssh_unoq_cmd(cmd)
-    return jsonify({'success': success, 'message': 'BNO086 100Hz IMU Publisher launch command issued' if success else msg})
+    return jsonify({'success': success, 'message': 'BNO086 IMU started' if success else msg})
 
 @app.route('/api/sensors/imu/stop', methods=['POST'])
 def stop_imu():
@@ -235,88 +292,131 @@ def stop_imu():
 def restart_router():
     cmd = "echo 'Askaban78@#' | sudo -S systemctl restart arduino-router"
     success, msg = ssh_unoq_cmd(cmd)
-    return jsonify({'success': success, 'message': 'Arduino router bridge restarted' if success else msg})
+    return jsonify({'success': success, 'message': 'Arduino router restarted' if success else msg})
 
 @app.route('/api/sensors/unoq/reboot', methods=['POST'])
 def reboot_unoq():
     cmd = "echo 'Askaban78@#' | sudo -S reboot"
     ssh_unoq_cmd(cmd, timeout=5)
     telemetry['unoq_online'] = False
-    return jsonify({'success': True, 'message': 'Reboot signal sent to Uno Q hardware'})
+    return jsonify({'success': True, 'message': 'Reboot signal sent to Uno Q'})
 
 @app.route('/api/rviz/launch/<mode>', methods=['POST'])
 def launch_rviz(mode):
-    global active_processes
     subprocess.run("pkill -9 -f rviz2 2>/dev/null || true", shell=True)
     subprocess.run("pkill -9 -f imu_dead_reckoning 2>/dev/null || true", shell=True)
 
-    ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
-    
+    ws = get_ws_dir()
     if mode == 'imu':
-        cmd = f"bash {ws_dir}/view_imu.sh"
+        cmd = f"bash {ws}/view_imu.sh"
     elif mode == 'integral':
-        cmd = f"bash {ws_dir}/view_imu_integral.sh"
+        cmd = f"bash {ws}/view_imu_integral.sh"
     elif mode == 'slam':
-        cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
+        cmd = f"source /opt/ros/jazzy/setup.bash && source {ws}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
     else:
-        cmd = f"source /opt/ros/jazzy/setup.bash && rviz2"
+        cmd = "source /opt/ros/jazzy/setup.bash && rviz2"
 
     proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=get_exec_env())
     active_processes['rviz'] = proc
-    return jsonify({'success': True, 'message': f'Launched visualizer for mode: {mode}'})
+    return jsonify({'success': True, 'message': f'Launched visualizer: {mode}'})
 
 @app.route('/api/rviz/stop', methods=['POST'])
 def stop_rviz():
     subprocess.run("pkill -9 -f rviz2 2>/dev/null || true", shell=True)
     subprocess.run("pkill -9 -f imu_dead_reckoning 2>/dev/null || true", shell=True)
-    return jsonify({'success': True, 'message': 'All RViz visualizers closed'})
+    return jsonify({'success': True, 'message': 'RViz closed'})
 
 @app.route('/api/slam/start', methods=['POST'])
 def start_slam():
-    global active_processes
-    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
-    
-    ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
-    cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
+    """
+    Start SLAM mapping pipeline.
+    IMPORTANT: Only kills slam_toolbox and rviz2 - NOT qos_relay.
+    qos_relay must remain running as it provides the TF tree and DDS bridge.
+    """
+    # Kill only slam and rviz - qos_relay stays alive
+    subprocess.run(
+        "pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_slam.launch.py' 2>/dev/null || true",
+        shell=True
+    )
+    time.sleep(0.5)
+
+    # Ensure qos_relay is running (restart if crashed)
+    relay_proc = active_processes.get('qos_relay')
+    if relay_proc is None or relay_proc.poll() is not None:
+        start_qos_relay_daemon()
+        time.sleep(1.0)  # Give relay time to start and publish TFs
+
+    ws = get_ws_dir()
+    cmd = (
+        f"source /opt/ros/jazzy/setup.bash && "
+        f"source {ws}/install/setup.bash 2>/dev/null || true && "
+        f"ros2 launch my_robot_nav imu_slam.launch.py"
+    )
     proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=get_exec_env())
     active_processes['slam'] = proc
     telemetry['slam_running'] = True
-    return jsonify({'success': True, 'message': 'SLAM Mapping pipeline & RViz window launched'})
+    return jsonify({'success': True, 'message': 'SLAM Mapping started - RViz opening in ~4s'})
 
 @app.route('/api/slam/stop', methods=['POST'])
 def stop_slam():
-    global active_processes
-    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
+    """Stop SLAM and RViz but keep qos_relay alive."""
+    subprocess.run(
+        "pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_slam.launch.py' 2>/dev/null || true",
+        shell=True
+    )
     telemetry['slam_running'] = False
-    return jsonify({'success': True, 'message': 'SLAM Mapping pipeline stopped'})
+    return jsonify({'success': True, 'message': 'SLAM stopped'})
 
 @app.route('/api/slam/save_map', methods=['POST'])
 def save_map():
     map_name = request.json.get('name', f"map_{int(time.time())}") if request.is_json else f"map_{int(time.time())}"
-    save_dir = '/home/ros/my_robot_ws/src/my_robot_nav/maps' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws/src/my_robot_nav/maps'
+    ws = get_ws_dir()
+    save_dir = f'{ws}/src/my_robot_nav/maps'
     os.makedirs(save_dir, exist_ok=True)
     target_path = os.path.join(save_dir, map_name)
 
-    cmd = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI={os.environ.get('CYCLONEDDS_URI', '')} && ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \"{{name: {{data: '{target_path}'}}}}\""
-    res = subprocess.run(cmd, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True, timeout=8)
-    
-    if "result=0" in res.stdout or "result: 0" in res.stdout or os.path.exists(f"{target_path}.yaml") or os.path.exists(f"{target_path}.pgm"):
-        return jsonify({'success': True, 'message': f'Map saved successfully to {target_path}.yaml', 'map_name': map_name})
-    
-    cmd_nav2 = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI={os.environ.get('CYCLONEDDS_URI', '')} && ros2 run nav2_map_server map_saver_cli -f {target_path}"
-    res2 = subprocess.run(cmd_nav2, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True, timeout=8)
-    
+    cyclone = os.environ.get('CYCLONEDDS_URI', '')
+    cmd = (
+        f"source /opt/ros/jazzy/setup.bash && "
+        f"export ROS_DOMAIN_ID=42 && "
+        f"export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+        f"export CYCLONEDDS_URI={cyclone} && "
+        f"ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "
+        f"\"{{name: {{data: '{target_path}'}}}}\""
+    )
+    res = subprocess.run(
+        cmd, shell=True, executable='/bin/bash',
+        env=get_exec_env(), capture_output=True, text=True, timeout=10
+    )
+
+    if os.path.exists(f"{target_path}.yaml") or os.path.exists(f"{target_path}.pgm"):
+        return jsonify({'success': True, 'message': f'Map saved: {map_name}.yaml', 'map_name': map_name})
+
+    # Fallback: nav2_map_server
+    cmd2 = (
+        f"source /opt/ros/jazzy/setup.bash && "
+        f"export ROS_DOMAIN_ID=42 && "
+        f"export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+        f"export CYCLONEDDS_URI={cyclone} && "
+        f"ros2 run nav2_map_server map_saver_cli -f {target_path}"
+    )
+    res2 = subprocess.run(
+        cmd2, shell=True, executable='/bin/bash',
+        env=get_exec_env(), capture_output=True, text=True, timeout=10
+    )
+
     if os.path.exists(f"{target_path}.yaml") or res2.returncode == 0:
-        return jsonify({'success': True, 'message': f'Map saved successfully to {target_path}.yaml', 'map_name': map_name})
+        return jsonify({'success': True, 'message': f'Map saved: {map_name}.yaml', 'map_name': map_name})
     return jsonify({'success': False, 'message': f'Save failed: {res.stdout or res2.stderr}'})
 
 @app.route('/api/slam/list_maps')
 def list_maps():
-    maps_dir = '/home/ros/my_robot_ws/src/my_robot_nav/maps' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws/src/my_robot_nav/maps'
+    ws = get_ws_dir()
+    maps_dir = f'{ws}/src/my_robot_nav/maps'
     if not os.path.exists(maps_dir):
         return jsonify([])
     files = [f for f in os.listdir(maps_dir) if f.endswith('.yaml')]
-    return jsonify(files)
+    return jsonify(sorted(files))
 
 def find_available_port(start_port=5050):
     for p in range(start_port, start_port + 20):

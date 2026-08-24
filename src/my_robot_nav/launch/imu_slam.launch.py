@@ -8,17 +8,11 @@ def generate_launch_description():
     nav_pkg = get_package_share_directory('my_robot_nav')
     slam_params_file = os.path.join(nav_pkg, 'config', 'slam_toolbox_params.yaml')
     rviz_config_file = os.path.join(nav_pkg, 'config', 'mapping.rviz')
-    
+
     return LaunchDescription([
-        # 1. QoS Relay, Continuous 50Hz Odometry (odom -> base_link) & Static Sensor TFs
-        Node(
-            package='my_robot_nav',
-            executable='qos_relay.py',
-            name='qos_relay',
-            output='screen'
-        ),
-        
-        # 2. SLAM Toolbox: Real-Time Async Mapping & Loop Closure (map -> odom)
+        # 1. SLAM Toolbox: Real-Time Async Mapping
+        #    qos_relay is started separately (persistent daemon via app.py)
+        #    so it is NOT killed/restarted when SLAM restarts
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
@@ -26,13 +20,17 @@ def generate_launch_description():
             output='screen',
             parameters=[slam_params_file]
         ),
-        
-        # 3. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
+
+        # 2. Lifecycle Activator (configure + activate slam_toolbox after 2s)
         TimerAction(
-            period=1.2,
+            period=2.0,
             actions=[
                 ExecuteProcess(
                     cmd=['bash', '-c',
+                         'source /opt/ros/jazzy/setup.bash 2>/dev/null || true; '
+                         'export ROS_DOMAIN_ID=42; '
+                         'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; '
+                         'export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml; '
                          'ros2 lifecycle set /slam_toolbox configure 2>/dev/null || true; '
                          'sleep 0.5; '
                          'ros2 lifecycle set /slam_toolbox activate 2>/dev/null || true'],
@@ -40,10 +38,10 @@ def generate_launch_description():
                 )
             ]
         ),
-        
-        # 4. RViz2 Visualizer
+
+        # 3. RViz2 Visualizer (after slam_toolbox is active)
         TimerAction(
-            period=2.5,
+            period=3.5,
             actions=[
                 Node(
                     package='rviz2',
