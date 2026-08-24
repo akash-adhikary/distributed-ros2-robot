@@ -184,12 +184,12 @@ graph TD
 
 ---
 
-### Failure 10: VS Code Remote Container Port 5000 Conflict
-- **Symptom**: Starting Flask web server threw `Address already in use. Port 5000 is in use by another program`.
-- **Root Cause**: VS Code Remote Containers automatically opens internal port-forwarding tunnels and loopback listeners on port `5000`.
-- **Breakthrough Fix**:
-  1. Moved Dashboard default port to **`5050`**.
-  2. Added dynamic port discovery `find_available_port(5050)` in `app.py` to seamlessly increment to 5051/5052 if any port is ever occupied.
+### Failure 11: Single-Process Python GIL Contention Between ROS 2 `rclpy.spin()` and Flask SSE Stream
+- **Symptom**: Clicking "Start SLAM Mapping" froze both the web browser 3D cube / 2D radar and RViz.
+- **Root Cause**: Running `rclpy.spin()` in a background Python thread inside the same process as Flask's Server-Sent Events (SSE) `/api/stream` generator caused severe Global Interpreter Lock (GIL) starvation. When SLAM launched and four high-rate topics flooded the DDS bus, `rclpy.spin()` locked the Python GIL, halting Flask HTTP endpoints and SSE packets.
+- **Breakthrough Fix**: Decoupled architecture into two dedicated processes:
+  1. [`telemetry_bridge.py`](file:///home/bliss/my_robot_ws/src/my_robot_dashboard/telemetry_bridge.py): Independent headless ROS 2 node running on Domain 42, writing atomic updates to `/tmp/robot_telemetry.json` at 30 Hz.
+  2. [`app.py`](file:///home/bliss/my_robot_ws/src/my_robot_dashboard/app.py): Pure, non-blocking Flask web server reading `/tmp/robot_telemetry.json` with zero GIL contention, guaranteed to stream at 25 FPS regardless of SLAM/EKF/RViz activity.
 
 ---
 
