@@ -3,14 +3,29 @@ import os
 import sys
 import json
 import time
+import math
 import pexpect
+import threading
 import subprocess
 import socket
-import threading
 from flask import Flask, render_template, jsonify, request, Response
 from flask_cors import CORS
 
-TELEMETRY_FILE = '/tmp/robot_telemetry.json'
+# Configure ROS 2 CycloneDDS environment
+os.environ['ROS_DOMAIN_ID'] = '42'
+os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+if os.path.exists('/home/ros/my_robot_ws/cyclonedds.xml'):
+    os.environ['CYCLONEDDS_URI'] = 'file:///home/ros/my_robot_ws/cyclonedds.xml'
+elif os.path.exists('/home/bliss/my_robot_ws/cyclonedds.xml'):
+    os.environ['CYCLONEDDS_URI'] = 'file:///home/bliss/my_robot_ws/cyclonedds.xml'
+
+if 'DISPLAY' not in os.environ:
+    os.environ['DISPLAY'] = ':0'
+os.environ['QT_X11_NO_MITSHM'] = '1'
+
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Imu, LaserScan
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
@@ -21,45 +36,106 @@ robot_config = {
     'pass': 'Askaban78@#'
 }
 
+telemetry = {
+    'robot_ip': robot_config['ip'],
+    'unoq_online': False,
+    'lidar_running': False,
+    'imu_running': False,
+    'slam_running': False,
+    'imu_rate': 0.0,
+    'lidar_rate': 0.0,
+    'roll_deg': 0.0,
+    'pitch_deg': 0.0,
+    'yaw_deg': 0.0,
+    'quat': {'w': 1.0, 'x': 0.0, 'y': 0.0, 'z': 0.0},
+    'acc': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+    'gyro': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+    'lidar_points': [],
+    'map_metadata': {'width': 0, 'height': 0, 'resolution': 0.05}
+}
+
+imu_msg_times = []
+lidar_msg_times = []
+last_imu_update = 0.0
+last_scan_update = 0.0
 active_processes = {}
 
-def ensure_telemetry_bridge():
-    """Supervisor thread to guarantee telemetry_bridge.py is always running"""
-    ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
-    bridge_path = os.path.join(ws_dir, 'src/my_robot_dashboard/telemetry_bridge.py')
-    
-    while True:
-        if 'bridge' not in active_processes or active_processes['bridge'].poll() is not None:
-            env = get_exec_env()
-            cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && python3 {bridge_path}"
-            proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=env)
-            active_processes['bridge'] = proc
-        time.sleep(2)
+class DashboardRosNode(Node):
+    def __init__(self):
+        super().__init__('dashboard_backend_node')
+        self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, 10)
+        self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
+        self.get_logger().info("Dashboard ROS 2 Subscriber Node initialized on Domain 42.")
 
-def get_latest_telemetry():
-    if os.path.exists(TELEMETRY_FILE):
-        try:
-            with open(TELEMETRY_FILE, 'r') as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        'robot_ip': robot_config['ip'],
-        'unoq_online': False,
-        'lidar_running': False,
-        'imu_running': False,
-        'slam_running': False,
-        'imu_rate': 0.0,
-        'lidar_rate': 0.0,
-        'roll_deg': 0.0,
-        'pitch_deg': 0.0,
-        'yaw_deg': 0.0,
-        'quat': {'w': 1.0, 'x': 0.0, 'y': 0.0, 'z': 0.0},
-        'acc': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-        'gyro': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-        'lidar_points': [],
-        'map_metadata': {'width': 0, 'height': 0, 'resolution': 0.05}
-    }
+    def imu_cb(self, msg):
+        global telemetry, imu_msg_times, last_imu_update
+        now = time.time()
+        imu_msg_times.append(now)
+        imu_msg_times = [t for t in imu_msg_times if now - t <= 2.0]
+        telemetry['imu_rate'] = round(len(imu_msg_times) / 2.0, 1)
+        telemetry['imu_running'] = (telemetry['imu_rate'] > 5.0)
+
+        # Cap UI updates to 30 Hz
+        if now - last_imu_update < 0.033:
+            return
+        last_imu_update = now
+
+        w = msg.orientation.w
+        x = msg.orientation.x
+        y = msg.orientation.y
+        z = msg.orientation.z
+        telemetry['quat'] = {'w': round(w, 4), 'x': round(x, 4), 'y': round(y, 4), 'z': round(z, 4)}
+
+        sinr_cosp = 2.0 * (w * x + y * z)
+        cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+        telemetry['roll_deg'] = round(math.atan2(sinr_cosp, cosr_cosp) * 180.0 / math.pi, 1)
+
+        sinp = 2.0 * (w * y - z * x)
+        if abs(sinp) >= 1.0:
+            telemetry['pitch_deg'] = round(math.copysign(90.0, sinp), 1)
+        else:
+            telemetry['pitch_deg'] = round(math.asin(sinp) * 180.0 / math.pi, 1)
+
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        telemetry['yaw_deg'] = round(math.atan2(siny_cosp, cosy_cosp) * 180.0 / math.pi, 1)
+
+        telemetry['acc'] = {'x': round(msg.linear_acceleration.x, 2), 'y': round(msg.linear_acceleration.y, 2), 'z': round(msg.linear_acceleration.z, 2)}
+        telemetry['gyro'] = {'x': round(msg.angular_velocity.x, 2), 'y': round(msg.angular_velocity.y, 2), 'z': round(msg.angular_velocity.z, 2)}
+
+    def scan_cb(self, msg):
+        global telemetry, lidar_msg_times, last_scan_update
+        now = time.time()
+        lidar_msg_times.append(now)
+        lidar_msg_times = [t for t in lidar_msg_times if now - t <= 2.0]
+        telemetry['lidar_rate'] = round(len(lidar_msg_times) / 2.0, 1)
+        telemetry['lidar_running'] = (telemetry['lidar_rate'] > 2.0)
+
+        # Cap radar updates to 10 Hz
+        if now - last_scan_update < 0.09:
+            return
+        last_scan_update = now
+
+        step = max(1, len(msg.ranges) // 100)
+        points = []
+        for i in range(0, len(msg.ranges), step):
+            r = msg.ranges[i]
+            if msg.range_min < r < msg.range_max:
+                angle = msg.angle_min + i * msg.angle_increment
+                points.append([round(angle, 3), round(r, 2)])
+        telemetry['lidar_points'] = points
+
+def non_blocking_ros_spin():
+    rclpy.init()
+    node = DashboardRosNode()
+    while rclpy.ok():
+        rclpy.spin_once(node, timeout_sec=0.008)
+        time.sleep(0.01) # Yields GIL to Flask threads smoothly!
+    node.destroy_node()
+    rclpy.shutdown()
+
+ros_thread = threading.Thread(target=non_blocking_ros_spin, daemon=True)
+ros_thread.start()
 
 def ssh_unoq_cmd(cmd, timeout=15):
     ip = robot_config['ip']
@@ -67,6 +143,7 @@ def ssh_unoq_cmd(cmd, timeout=15):
         child = pexpect.spawn(f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 {robot_config['user']}@{ip}", encoding='utf-8')
         res = child.expect([r'[pP]assword:', pexpect.TIMEOUT, pexpect.EOF], timeout=5)
         if res != 0:
+            telemetry['unoq_online'] = False
             return False, f"Could not connect to {ip} (Timeout / Unreachable)"
         child.sendline(robot_config['pass'])
         child.expect([r'\$ '], timeout=8)
@@ -75,8 +152,10 @@ def ssh_unoq_cmd(cmd, timeout=15):
         output = child.before
         child.sendline("exit")
         child.expect(pexpect.EOF)
+        telemetry['unoq_online'] = True
         return True, output
     except Exception as e:
+        telemetry['unoq_online'] = False
         return False, str(e)
 
 def get_exec_env():
@@ -91,10 +170,6 @@ def get_exec_env():
         env['CYCLONEDDS_URI'] = 'file:///home/bliss/my_robot_ws/cyclonedds.xml'
     return env
 
-# Start supervisor thread
-supervisor_thread = threading.Thread(target=ensure_telemetry_bridge, daemon=True)
-supervisor_thread.start()
-
 # ----------------- REST API ROUTES ----------------- #
 
 @app.route('/')
@@ -106,21 +181,22 @@ def set_ip():
     new_ip = request.json.get('ip', '').strip()
     if new_ip:
         robot_config['ip'] = new_ip
+        telemetry['robot_ip'] = new_ip
         return jsonify({'success': True, 'message': f'Robot IP updated to {new_ip}'})
     return jsonify({'success': False, 'message': 'Invalid IP address'})
 
 @app.route('/api/telemetry')
 def get_telemetry():
-    return jsonify(get_latest_telemetry())
+    return jsonify(telemetry)
 
 @app.route('/api/stream')
 def sse_stream():
     def event_stream():
         while True:
             try:
-                data = json.dumps(get_latest_telemetry())
+                data = json.dumps(telemetry)
                 yield f"data: {data}\n\n"
-                time.sleep(0.04) # Steady 25 FPS SSE stream with zero GIL contention
+                time.sleep(0.04) # Steady 25 FPS SSE stream
             except GeneratorExit:
                 break
             except Exception:
@@ -142,6 +218,7 @@ def start_lidar():
 def stop_lidar():
     cmd = "docker exec -t rplidar pkill -f 'rplidar_node' 2>/dev/null || true"
     success, msg = ssh_unoq_cmd(cmd)
+    telemetry['lidar_running'] = False
     return jsonify({'success': success, 'message': 'RPLidar stopped' if success else msg})
 
 @app.route('/api/sensors/imu/start', methods=['POST'])
@@ -158,6 +235,7 @@ def start_imu():
 def stop_imu():
     cmd = "docker exec -t rplidar pkill -f 'imu_publisher' 2>/dev/null || true"
     success, msg = ssh_unoq_cmd(cmd)
+    telemetry['imu_running'] = False
     return jsonify({'success': success, 'message': 'IMU stopped' if success else msg})
 
 @app.route('/api/sensors/router/restart', methods=['POST'])
@@ -170,6 +248,7 @@ def restart_router():
 def reboot_unoq():
     cmd = "echo 'Askaban78@#' | sudo -S reboot"
     ssh_unoq_cmd(cmd, timeout=5)
+    telemetry['unoq_online'] = False
     return jsonify({'success': True, 'message': 'Reboot signal sent to Uno Q hardware'})
 
 @app.route('/api/rviz/launch/<mode>', methods=['POST'])
@@ -202,19 +281,20 @@ def stop_rviz():
 @app.route('/api/slam/start', methods=['POST'])
 def start_slam():
     global active_processes
-    # Clean up previous SLAM instances without killing telemetry bridge
     subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
     
     ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
     cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
     proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=get_exec_env())
     active_processes['slam'] = proc
+    telemetry['slam_running'] = True
     return jsonify({'success': True, 'message': 'SLAM Mapping pipeline & RViz window launched'})
 
 @app.route('/api/slam/stop', methods=['POST'])
 def stop_slam():
     global active_processes
     subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
+    telemetry['slam_running'] = False
     return jsonify({'success': True, 'message': 'SLAM Mapping pipeline stopped'})
 
 @app.route('/api/slam/save_map', methods=['POST'])
