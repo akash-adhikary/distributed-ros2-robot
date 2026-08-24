@@ -3,6 +3,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Clean up any previous dashboard or ROS test processes
+pkill -9 -f 'src/my_robot_dashboard/app.py' 2>/dev/null || true
+docker exec -t thirsty_burnell pkill -9 -f 'src/my_robot_dashboard/app.py' 2>/dev/null || true
+
 echo "========================================================="
 echo "  STARTING DISTRIBUTED ROS 2 ROBOT CONTROL HUB"
 echo "  Web UI: http://localhost:5050"
@@ -16,6 +20,8 @@ if command -v ros2 &> /dev/null; then
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
     export PORT=5050
+    export DISPLAY=:0
+    export QT_X11_NO_MITSHM=1
     
     python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
 else
@@ -25,13 +31,15 @@ else
     fi
     echo "Launching Dashboard inside DevContainer ($CONTAINER_ID)..."
     xhost +local: 2>/dev/null || true
-    docker exec -it -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix $CONTAINER_ID bash -c "
+    docker exec -it -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 -v /tmp/.X11-unix:/tmp/.X11-unix $CONTAINER_ID bash -c "
         source /opt/ros/jazzy/setup.bash
         source /home/ros/my_robot_ws/install/setup.bash 2>/dev/null || true
         export ROS_DOMAIN_ID=42
         export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
         export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
         export PORT=5050
+        export DISPLAY=:0
+        export QT_X11_NO_MITSHM=1
         python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
     "
 fi
