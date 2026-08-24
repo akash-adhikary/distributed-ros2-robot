@@ -1,38 +1,42 @@
 slam_toolbox:
   ros__parameters:
     use_sim_time: false
+    autostart: true
+    use_lifecycle_manager: false
+    
+    # Frames & Topics
     odom_frame: odom
     map_frame: map
     base_frame: base_link
     scan_topic: /scan_reliable
     mode: mapping
+    
+    # Performance & Filtering
     debug_logging: false
     throttle_scans: 1
     transform_publish_period: 0.02
-    map_update_interval: 1.0
+    map_update_interval: 0.5
     resolution: 0.05
     max_laser_range: 12.0
-    minimum_time_interval: 0.1
+    minimum_time_interval: 0.05
     transform_timeout: 0.2
-    tf_buffer_duration: 5.0
+    tf_buffer_duration: 10.0
     stack_size_to_use: 40000000
     enable_interactive_mode: true
-    position_search_distance: 0.2
-    position_search_angle: 0.1
-    position_search_interval: 0.01
-    position_search_resolution: 0.02
-    position_search_angular_resolution: 0.005
+    
+    # Scan Matcher Tuning (Fine planar correlation)
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.1
-    minimum_travel_heading: 0.1
-    scan_buffer_size: 10
+    minimum_travel_distance: 0.05
+    minimum_travel_heading: 0.05
+    scan_buffer_size: 15
     scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    loop_search_maximum_distance: 3.0
+    
+    # Loop Closure
     do_loop_closing: true 
-    loop_match_minimum_chain_size: 10
+    loop_match_minimum_chain_size: 8
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
     loop_match_minimum_response_fine: 0.45

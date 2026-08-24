@@ -246,3 +246,29 @@ To launch the complete SLAM stack:
 ```bash
 ros2 launch my_robot_nav imu_slam.launch.py
 ```
+
+---
+
+## 7. Mandatory GitHub Issue Lifecycle & AI Workflow Protocol
+
+To maintain complete traceability, reproducible context, and clean software engineering standards across all AI agents and human contributors:
+
+### 1. Issue Creation Rule
+Before starting work on any bug fix, optimization, or feature:
+```bash
+gh issue create --title "<Component>: <Clear description>" --body "<Technical requirements & context>"
+```
+
+### 2. Implementation & Traceability
+- Branching: Always branch from `main` (e.g., `feature/lidar-imu-slam-fusion` or `fix/i2c-timeout`).
+- Commits: Reference the issue number in the commit message (e.g., `feat(slam): implement QoS relay and EKF fusion (#1)`).
+
+### 3. Resolution & Closure Protocol
+When an issue is resolved and tested:
+```bash
+gh issue close <issue_number> --comment "### Resolution Summary
+1. Root Cause / Architecture: ...
+2. Changes Implemented: ...
+3. Verification & Test Logs: ...
+4. Linked Commits: ..."
+```
