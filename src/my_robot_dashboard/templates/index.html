@@ -49,8 +49,11 @@
             <button onclick="changeRobotIp()" class="badge bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 cursor-pointer">
                 <i class="fa-solid fa-network-wired mr-1.5"></i> <span id="ip-display">192.168.1.17</span>
             </button>
-            <button onclick="confirmAction('Emergency Stop: Terminate ALL active ROS nodes across Laptop and Uno Q?', '/api/system/kill_all')" class="badge bg-red-950/80 hover:bg-red-800 text-red-300 border border-red-800 cursor-pointer transition">
-                <i class="fa-solid fa-power-off mr-1.5 text-red-400"></i> Kill All ROS Activity
+            <button onclick="confirmAction('Reset and clear active ROS nodes across Laptop and Uno Q?', '/api/system/kill_all')" class="badge bg-amber-950/80 hover:bg-amber-800 text-amber-300 border border-amber-800 cursor-pointer transition">
+                <i class="fa-solid fa-rotate mr-1.5 text-amber-400"></i> Reset Nodes
+            </button>
+            <button onclick="confirmAction('Full Shutdown: Terminate dashboard server, start_dashboard.sh, and all ROS activity?', '/api/system/shutdown_all')" class="badge bg-red-950/90 hover:bg-red-800 text-red-300 border border-red-700 cursor-pointer transition">
+                <i class="fa-solid fa-power-off mr-1.5 text-red-400"></i> Shutdown All & Exit
             </button>
             <span id="unoq-status" class="badge bg-slate-800 text-slate-400 border border-slate-700">
                 <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Uno Q Checking...
@@ -118,9 +121,14 @@
                             <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Reboot Uno Q
                         </button>
                     </div>
-                    <button onclick="confirmAction('Terminate ALL active ROS nodes across Laptop and Uno Q?', '/api/system/kill_all')" class="w-full bg-rose-950/80 hover:bg-rose-800 text-rose-200 text-xs font-semibold py-2 px-3 rounded-lg border border-rose-800 transition duration-200 flex items-center justify-center">
-                        <i class="fa-solid fa-triangle-exclamation mr-1.5 text-rose-400"></i> Kill All Active ROS Nodes
-                    </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="confirmAction('Reset and restart ROS 2 nodes?', '/api/system/kill_all')" class="bg-amber-950/80 hover:bg-amber-800 text-amber-200 text-xs font-semibold py-2 px-2 rounded-lg border border-amber-800 transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-arrows-rotate mr-1.5 text-amber-400"></i> Reset Nodes
+                        </button>
+                        <button onclick="confirmAction('Full Shutdown: Terminate dashboard server, start_dashboard.sh, and all ROS activity?', '/api/system/shutdown_all')" class="bg-rose-950/90 hover:bg-rose-800 text-rose-200 text-xs font-semibold py-2 px-2 rounded-lg border border-rose-800 transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-power-off mr-1.5 text-rose-400"></i> Shutdown All
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -231,9 +239,14 @@
                             <i class="fa-solid fa-stop mr-1.5"></i> Stop SLAM
                         </button>
                     </div>
-                    <button onclick="saveCurrentMap()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-3 rounded-lg transition duration-200 flex items-center justify-center">
-                        <i class="fa-solid fa-floppy-disk mr-1.5"></i> Save Generated Map (PNG/PGM)
-                    </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="saveCurrentMap()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-floppy-disk mr-1.5"></i> Save Map (Raw)
+                        </button>
+                        <button onclick="regularizeLatestMap()" class="glow-btn bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold py-2.5 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-draw-polygon mr-1.5"></i> Snap to 90° Boxy Walls
+                        </button>
+                    </div>
 
                     <!-- Saved Maps List Dropdown -->
                     <div class="p-3 bg-slate-800/60 rounded-xl border border-slate-700/50">

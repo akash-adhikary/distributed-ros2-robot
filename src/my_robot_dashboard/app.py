@@ -514,6 +514,73 @@ def save_map():
         return jsonify({'success': True, 'message': f'Map saved: {map_name}.yaml', 'map_name': map_name})
     return jsonify({'success': False, 'message': f'Save failed: {res.stdout or res2.stderr}'})
 
+@app.route('/api/system/shutdown_all', methods=['POST'])
+def shutdown_all():
+    """
+    Complete Full System Shutdown: Terminates all ROS 2 activity on Laptop & Uno Q,
+    and terminates the Flask Dashboard server itself, exiting start_dashboard.sh cleanly.
+    """
+    # 1. Kill all local processes
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_dead_reckoning|qos_relay|tf2_ros|ros2' 2>/dev/null || true", shell=True)
+    
+    # 2. Kill edge sensors on Uno Q
+    cmd_unoq = "docker exec -t rplidar pkill -9 -f 'rplidar_node|imu_publisher|ros2' 2>/dev/null || true"
+    ssh_unoq_cmd(cmd_unoq)
+
+    # 3. Clean up PID file
+    try:
+        if os.path.exists(PIDFILE_PATH):
+            os.remove(PIDFILE_PATH)
+    except Exception:
+        pass
+
+    def stop_server():
+        time.sleep(0.5)
+        print("[Dashboard] Full system shutdown complete. Exiting...")
+        os._exit(0)
+
+    threading.Thread(target=stop_server, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Full system shutdown initiated. Dashboard and all ROS nodes stopping.'})
+
+@app.route('/api/slam/regularize_map', methods=['POST'])
+def regularize_map():
+    """
+    Applies Manhattan World 90-degree orthogonal line snapping to a saved map.
+    """
+    map_name = request.json.get('name', '') if request.is_json else ''
+    ws = get_ws_dir()
+    maps_dir = f'{ws}/src/my_robot_nav/maps'
+    
+    if not map_name:
+        # Pick latest map
+        if not os.path.exists(maps_dir):
+            return jsonify({'success': False, 'message': 'No maps directory found'})
+        yaml_files = sorted([f for f in os.listdir(maps_dir) if f.endswith('.yaml') and not f.endswith('_regularized.yaml')], reverse=True)
+        if not yaml_files:
+            return jsonify({'success': False, 'message': 'No saved maps found to regularize. Save a map first!'})
+        map_name = yaml_files[0]
+
+    yaml_path = os.path.join(maps_dir, map_name if map_name.endswith('.yaml') else f"{map_name}.yaml")
+    
+    try:
+        # Import map regularizer utility
+        sys.path.insert(0, f'{ws}/src/my_robot_nav/scripts')
+        from map_regularizer import regularize_saved_map_file
+        
+        ok, res = regularize_saved_map_file(yaml_path)
+        if ok:
+            return jsonify({
+                'success': True,
+                'message': f"Map {map_name} snapped to orthogonal boxy walls!",
+                'regularized_yaml': os.path.basename(res['regularized_yaml']),
+                'regularized_svg': os.path.basename(res['regularized_svg']),
+                'stats': res['stats']
+            })
+        else:
+            return jsonify({'success': False, 'message': str(res)})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f"Error during map regularization: {str(e)}"})
+
 @app.route('/api/slam/list_maps')
 def list_maps():
     ws = get_ws_dir()
@@ -521,7 +588,7 @@ def list_maps():
     if not os.path.exists(maps_dir):
         return jsonify([])
     files = [f for f in os.listdir(maps_dir) if f.endswith('.yaml')]
-    return jsonify(sorted(files))
+    return jsonify(sorted(files, reverse=True))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))

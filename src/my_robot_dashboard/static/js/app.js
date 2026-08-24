@@ -245,6 +245,11 @@ function saveCurrentMap() {
     }
 }
 
+function regularizeLatestMap() {
+    apiCall('/api/slam/regularize_map');
+    setTimeout(loadSavedMaps, 2000);
+}
+
 function loadSavedMaps() {
     fetch('/api/slam/list_maps')
         .then(res => res.json())
@@ -254,12 +259,16 @@ function loadSavedMaps() {
                 list.innerHTML = '<li class="italic text-slate-500">No maps saved yet.</li>';
                 return;
             }
-            list.innerHTML = maps.map(m => `
-                <li class="flex justify-between items-center bg-slate-900/60 p-1.5 rounded text-slate-300 font-mono">
-                    <span><i class="fa-solid fa-file-lines text-amber-400 mr-1.5"></i> ${m}</span>
-                    <span class="text-[10px] text-emerald-400">Ready</span>
+            list.innerHTML = maps.map(m => {
+                const isReg = m.includes('_regularized');
+                const badge = isReg ? '<span class="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-bold">Boxy 90°</span>' : '<span class="text-[10px] text-emerald-400">Raw</span>';
+                return `
+                <li class="flex justify-between items-center bg-slate-900/60 p-1.5 rounded text-slate-300 font-mono text-[11px]">
+                    <span class="truncate max-w-[150px]"><i class="fa-solid fa-file-lines ${isReg ? 'text-cyan-400' : 'text-amber-400'} mr-1.5"></i> ${m}</span>
+                    ${badge}
                 </li>
-            `).join('');
+                `;
+            }).join('');
         })
         .catch(err => console.error("Error loading maps:", err));
 }
