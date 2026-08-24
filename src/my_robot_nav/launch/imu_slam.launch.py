@@ -11,7 +11,7 @@ def generate_launch_description():
     rviz_config_file = os.path.join(nav_pkg, 'config', 'mapping.rviz')
     
     return LaunchDescription([
-        # 1. QoS, Local Timestamp, Static TF & SLERP Jitter Filter Relay
+        # 1. QoS, Local Timestamp & SLERP Jitter Filter Relay
         Node(
             package='my_robot_nav',
             executable='qos_relay.py',
@@ -19,7 +19,27 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # 2. EKF Node for Odometry & Rotational Heading (odom -> base_link)
+        # 2. Static Transform Publishers (base_link to sensors)
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_to_laser',
+            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_to_laser_frame',
+            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser_frame']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_to_imu',
+            arguments=['0', '0', '0.05', '0', '0', '0', 'base_link', 'imu_link']
+        ),
+        
+        # 3. EKF Node for Odometry & Rotational Heading (odom -> base_link)
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -28,7 +48,7 @@ def generate_launch_description():
             parameters=[ekf_params_file]
         ),
         
-        # 3. SLAM Toolbox: Real-Time Async Mapping & Loop Closure (map -> odom)
+        # 4. SLAM Toolbox: Real-Time Async Mapping & Loop Closure (map -> odom)
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
@@ -37,9 +57,9 @@ def generate_launch_description():
             parameters=[slam_params_file]
         ),
         
-        # 4. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
+        # 5. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
         TimerAction(
-            period=2.0,
+            period=2.5,
             actions=[
                 ExecuteProcess(
                     cmd=['bash', '-c',
@@ -51,7 +71,7 @@ def generate_launch_description():
             ]
         ),
         
-        # 5. RViz2 Visualizer
+        # 6. RViz2 Visualizer
         Node(
             package='rviz2',
             executable='rviz2',
