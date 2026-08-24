@@ -29,9 +29,9 @@ Visualization Manager:
         Z: 0
       Plane: XY
       Plane Cell Count: 20
-      Reference Frame: map
+      Reference Frame: odom
       Value: true
-    - Alpha: 0.7
+    - Alpha: 0.75
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: false
@@ -69,7 +69,7 @@ Visualization Manager:
       Min Color: 0; 0; 255
       Name: LaserScan
       Position Tolerance: 0.1
-      Queue Size: 10
+      Queue Size: 20
       Selectable: true
       Size (Pixels): 4
       Size (m): 0.05
@@ -100,7 +100,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 30; 30; 30
-    Fixed Frame: map
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -127,6 +127,6 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.01
       Pitch: 1.57079
-      Target Frame: map
+      Target Frame: odom
       Value: Orbit (rviz)
       Yaw: 0
