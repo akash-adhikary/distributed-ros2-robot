@@ -251,19 +251,29 @@ def launch_rviz(mode):
 
 @app.route('/api/rviz/stop', methods=['POST'])
 def stop_rviz():
-    subprocess.run("pkill -f rviz2 2>/dev/null || true", shell=True)
-    subprocess.run("pkill -f imu_dead_reckoning 2>/dev/null || true", shell=True)
+    subprocess.run("pkill -9 -f rviz2 2>/dev/null || true", shell=True)
+    subprocess.run("pkill -9 -f imu_dead_reckoning 2>/dev/null || true", shell=True)
     return jsonify({'success': True, 'message': 'All RViz visualizers closed'})
 
 @app.route('/api/slam/start', methods=['POST'])
 def start_slam():
     global active_processes
+    # Clean up previous SLAM/EKF/RViz instances
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2' 2>/dev/null || true", shell=True)
+    
     ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
     cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://{ws_dir}/cyclonedds.xml && ros2 launch my_robot_nav imu_slam.launch.py"
     proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
     active_processes['slam'] = proc
     telemetry['slam_running'] = True
-    return jsonify({'success': True, 'message': 'SLAM Toolbox & EKF Fusion pipeline launched'})
+    return jsonify({'success': True, 'message': 'SLAM Toolbox & EKF Mapping pipeline launched with RViz'})
+
+@app.route('/api/slam/stop', methods=['POST'])
+def stop_slam():
+    global active_processes
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
+    telemetry['slam_running'] = False
+    return jsonify({'success': True, 'message': 'SLAM Mapping pipeline stopped'})
 
 @app.route('/api/slam/save_map', methods=['POST'])
 def save_map():

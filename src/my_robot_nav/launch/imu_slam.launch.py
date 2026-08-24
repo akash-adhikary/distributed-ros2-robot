@@ -1,5 +1,6 @@
 import os
 from launch import LaunchDescription
+from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -18,27 +19,27 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # 2. Static Transform Broadcasters (Robot Geometry)
+        # 2. Static Transform Broadcasters (base_link to sensors)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_laser',
-            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser']
+            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser']
         ),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_laser_frame',
-            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser_frame']
+            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser_frame']
         ),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_imu',
-            arguments=['0', '0', '0.05', '0', '0', '0', 'base_link', 'imu_link']
+            arguments=['--x', '0', '--y', '0', '--z', '0.05', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'imu_link']
         ),
         
-        # 3. EKF Node for Odometry & Rotational Orientation (odom -> base_link)
+        # 3. EKF Node for Odometry & Rotational Heading (odom -> base_link)
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -56,7 +57,21 @@ def generate_launch_description():
             parameters=[slam_params_file]
         ),
         
-        # 5. RViz2 Visualizer
+        # 5. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
+        TimerAction(
+            period=2.0,
+            actions=[
+                ExecuteProcess(
+                    cmd=['bash', '-c',
+                         'ros2 lifecycle set /slam_toolbox configure 2>/dev/null || true; '
+                         'sleep 1; '
+                         'ros2 lifecycle set /slam_toolbox activate 2>/dev/null || true'],
+                    output='screen'
+                )
+            ]
+        ),
+        
+        # 6. RViz2 Visualizer
         Node(
             package='rviz2',
             executable='rviz2',
