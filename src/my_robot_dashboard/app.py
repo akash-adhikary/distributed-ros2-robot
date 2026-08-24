@@ -294,12 +294,20 @@ def save_map():
     os.makedirs(save_dir, exist_ok=True)
     target_path = os.path.join(save_dir, map_name)
 
-    cmd = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && ros2 run nav2_map_server map_saver_cli -f {target_path}"
-    res = subprocess.run(cmd, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True)
-    if res.returncode == 0:
+    # 1. Primary: Save via slam_toolbox SaveMap service
+    cmd = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI={os.environ.get('CYCLONEDDS_URI', '')} && ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \"{{name: {{data: '{target_path}'}}}}\""
+    res = subprocess.run(cmd, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True, timeout=8)
+    
+    if "result=0" in res.stdout or "result: 0" in res.stdout or os.path.exists(f"{target_path}.yaml") or os.path.exists(f"{target_path}.pgm"):
         return jsonify({'success': True, 'message': f'Map saved successfully to {target_path}.yaml', 'map_name': map_name})
-    else:
-        return jsonify({'success': False, 'message': f'Failed saving map: {res.stderr or res.stdout}'})
+    
+    # 2. Fallback: nav2 map_saver
+    cmd_nav2 = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI={os.environ.get('CYCLONEDDS_URI', '')} && ros2 run nav2_map_server map_saver_cli -f {target_path}"
+    res2 = subprocess.run(cmd_nav2, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True, timeout=8)
+    
+    if os.path.exists(f"{target_path}.yaml") or res2.returncode == 0:
+        return jsonify({'success': True, 'message': f'Map saved successfully to {target_path}.yaml', 'map_name': map_name})
+    return jsonify({'success': False, 'message': f'Save failed: {res.stdout or res2.stderr}'})
 
 @app.route('/api/slam/list_maps')
 def list_maps():
