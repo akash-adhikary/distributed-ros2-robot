@@ -21,4 +21,4 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file://${PWD}/cyclonedds.xml
 
 # Ensure CycloneDDS uses the correct network interface config
-ros2 launch my_robot_bringup slam_launch.py
+ros2 launch my_robot_nav imu_slam.launch.py
