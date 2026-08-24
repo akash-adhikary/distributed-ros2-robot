@@ -34,3 +34,15 @@ As instructed, the following principles must be followed by all agents and itera
 1. **Validation at Every Step:** Never assume a deployment worked. Always perform checks and validations (e.g. `ros2 topic hz`) after compiling or deploying nodes.
 2. **Centralized Launch:** The laptop's `launch_all.sh` must be the single source of truth. It should remotely hit the Uno Q and initiate the counterpart Docker containers natively via SSH. No orphaned background sessions or manual SSH required by the user.
 3. **No Garbage or Redundancy:** All code must exist in this central GitHub repository. No code should exist exclusively on the Uno Q pendrive (to prevent data loss if the pendrive is wiped). Clean up orphaned containers before launching new ones.
+
+## Step-by-Step Hardware Verification Log
+1. **Step 1: RPLiDAR C1 Validation** (Verified & Passing)
+   - Running natively on Uno Q Docker (`ros:jazzy-ros-base` on ext4 pendrive `/ws`).
+   - Sourced with `ROS_DOMAIN_ID=42` and `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`.
+   - Streaming `/scan` across Wi-Fi to ThinkPad T470 at ~10 Hz.
+   - Dedicated visualizer script: `./view_lidar.sh` with rainbow intensity color scheme.
+
+2. **Step 2: Handheld 2D SLAM Mapping** (Verified & Passing)
+   - Launch script: `./start_mapping.sh` (`my_robot_nav/launch/handheld_mapping.launch.py`).
+   - Native ROS 2 lifecycle activator node transitions `slam_toolbox` through `configure` -> `activate`.
+   - Generates dynamic transform `map -> odom -> base_footprint -> laser` and publishes `/map` occupancy grid.
