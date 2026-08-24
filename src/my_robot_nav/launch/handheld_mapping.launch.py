@@ -1,12 +1,12 @@
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     nav_pkg = get_package_share_directory('my_robot_nav')
     slam_params_file = os.path.join(nav_pkg, 'config', 'handheld_slam_params.yaml')
+    rviz_config_file = os.path.join(nav_pkg, 'config', 'mapping.rviz')
     
     return LaunchDescription([
         # 1. QoS and Timestamp Relay
@@ -33,7 +33,7 @@ def generate_launch_description():
             arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'laser']
         ),
         
-        # 4. SLAM Toolbox (lifecycle node, starts unconfigured)
+        # 4. SLAM Toolbox (lifecycle node)
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
@@ -42,18 +42,12 @@ def generate_launch_description():
             parameters=[slam_params_file, {'use_sim_time': False}]
         ),
         
-        # 5. After 5 seconds, configure + activate SLAM via CLI
-        TimerAction(
-            period=5.0,
-            actions=[
-                ExecuteProcess(
-                    cmd=['bash', '-c',
-                         'ros2 lifecycle set /slam_toolbox configure && '
-                         'sleep 2 && '
-                         'ros2 lifecycle set /slam_toolbox activate'],
-                    output='screen'
-                )
-            ]
+        # 5. Robust Native Lifecycle Activator Node
+        Node(
+            package='my_robot_nav',
+            executable='lifecycle_activator.py',
+            name='lifecycle_activator',
+            output='screen'
         ),
         
         # 6. RViz
@@ -61,6 +55,7 @@ def generate_launch_description():
             package='rviz2',
             executable='rviz2',
             name='rviz2',
-            output='screen'
+            output='screen',
+            arguments=['-d', rviz_config_file]
         )
     ])
