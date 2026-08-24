@@ -7,6 +7,7 @@ import math
 import pexpect
 import threading
 import subprocess
+import socket
 from flask import Flask, render_template, jsonify, request, Response, send_file
 from flask_cors import CORS
 
@@ -128,7 +129,6 @@ if ROS2_AVAILABLE:
     t.start()
 
 def ssh_unoq_cmd(cmd, timeout=15):
-    """Executes a command on Uno Q via SSH"""
     ip = robot_config['ip']
     try:
         child = pexpect.spawn(f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 {robot_config['user']}@{ip}", encoding='utf-8')
@@ -287,8 +287,16 @@ def list_maps():
     files = [f for f in os.listdir(maps_dir) if f.endswith('.yaml')]
     return jsonify(files)
 
+def find_available_port(start_port=5050):
+    for p in range(start_port, start_port + 20):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', p)) != 0:
+                return p
+    return start_port
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    default_port = int(os.environ.get('PORT', 5050))
+    port = find_available_port(default_port)
     print(f"==================================================")
     print(f"  ROBOT CONTROL & DIAGNOSTIC DASHBOARD ONLINE")
     print(f"  Access UI at: http://localhost:{port}")

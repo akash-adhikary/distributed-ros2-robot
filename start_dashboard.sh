@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "========================================================="
 echo "  STARTING DISTRIBUTED ROS 2 ROBOT CONTROL HUB"
-echo "  Web UI: http://localhost:5000"
+echo "  Web UI: http://localhost:5050"
 echo "========================================================="
 
 # Detect if running inside ROS 2 container or on host
@@ -15,6 +15,7 @@ if command -v ros2 &> /dev/null; then
     export ROS_DOMAIN_ID=42
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
+    export PORT=5050
     
     python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
 else
@@ -30,6 +31,7 @@ else
         export ROS_DOMAIN_ID=42
         export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
         export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
+        export PORT=5050
         python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
     "
 fi
