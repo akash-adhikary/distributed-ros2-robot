@@ -157,6 +157,42 @@ graph TD
 
 ---
 
+### Failure 8: SLAM Lifecycle Race Condition (`Fixed Frame [map] does not exist`)
+- **Symptom**: Clicking "Start SLAM Mapping" opened RViz with a persistent red error: `Fixed Frame: Frame [map] does not exist`.
+- **Root Cause**: `slam_toolbox` in ROS 2 Jazzy is an unconfigured lifecycle node at startup. Initializing the Ceres non-linear solver and executing lifecycle transitions (`unconfigured -> inactive -> active`) takes ~2.5 seconds. RViz was opening at $t=0$, attempting to resolve the `map` coordinate frame before `slam_toolbox` created it, latching a permanent red error status in RViz.
+- **Breakthrough Fix**:
+  1. **Sequenced Startup**: Wrapped `rviz2` in a `TimerAction(period=3.5)` in [`imu_slam.launch.py`](file:///home/bliss/my_robot_ws/src/my_robot_nav/launch/imu_slam.launch.py) so it only opens **after** `slam_toolbox` is verified in the `ACTIVE` state.
+  2. **Fixed Frame Alignment**: Set the initial RViz Fixed Frame to `odom` in [`mapping.rviz`](file:///home/bliss/my_robot_ws/src/my_robot_nav/config/mapping.rviz) (which exists immediately from EKF at $t=0$), allowing `/map` to overlay without error.
+
+---
+
+### Failure 9: CycloneDDS XML Schema Element Placement
+- **Symptom**: `python3: config: //CycloneDDS/Domain/General: MaxAutoParticipantIndex: unknown element (cyclonedds.xml line 8)` causing `rmw_create_node: failed to create domain`.
+- **Root Cause**: In the Eclipse CycloneDDS XML schema, the tag `<MaxAutoParticipantIndex>` belongs strictly inside `<Discovery>`, not `<General>`.
+- **Breakthrough Fix**:
+  ```xml
+  <Domain id="any">
+      <General>
+          <Interfaces><NetworkInterface name="wlp4s0" /></Interfaces>
+          <AllowMulticast>true</AllowMulticast>
+      </General>
+      <Discovery>
+          <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      </Discovery>
+  </Domain>
+  ```
+
+---
+
+### Failure 10: VS Code Remote Container Port 5000 Conflict
+- **Symptom**: Starting Flask web server threw `Address already in use. Port 5000 is in use by another program`.
+- **Root Cause**: VS Code Remote Containers automatically opens internal port-forwarding tunnels and loopback listeners on port `5000`.
+- **Breakthrough Fix**:
+  1. Moved Dashboard default port to **`5050`**.
+  2. Added dynamic port discovery `find_available_port(5050)` in `app.py` to seamlessly increment to 5051/5052 if any port is ever occupied.
+
+---
+
 ## 4. Key Source Code References
 
 ### 1. Uno Q STM32 Firmware (`BnoTest.ino`)
