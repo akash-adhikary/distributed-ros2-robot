@@ -19,6 +19,10 @@ if os.path.exists('/home/ros/my_robot_ws/cyclonedds.xml'):
 elif os.path.exists('/home/bliss/my_robot_ws/cyclonedds.xml'):
     os.environ['CYCLONEDDS_URI'] = 'file:///home/bliss/my_robot_ws/cyclonedds.xml'
 
+if 'DISPLAY' not in os.environ:
+    os.environ['DISPLAY'] = ':0'
+os.environ['QT_X11_NO_MITSHM'] = '1'
+
 try:
     import rclpy
     from rclpy.node import Node
@@ -149,6 +153,18 @@ def ssh_unoq_cmd(cmd, timeout=15):
         telemetry['unoq_online'] = False
         return False, str(e)
 
+def get_exec_env():
+    env = os.environ.copy()
+    env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
+    env['QT_X11_NO_MITSHM'] = '1'
+    env['ROS_DOMAIN_ID'] = '42'
+    env['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+    if os.path.exists('/home/ros/my_robot_ws/cyclonedds.xml'):
+        env['CYCLONEDDS_URI'] = 'file:///home/ros/my_robot_ws/cyclonedds.xml'
+    elif os.path.exists('/home/bliss/my_robot_ws/cyclonedds.xml'):
+        env['CYCLONEDDS_URI'] = 'file:///home/bliss/my_robot_ws/cyclonedds.xml'
+    return env
+
 # ----------------- REST API ROUTES ----------------- #
 
 @app.route('/')
@@ -228,24 +244,21 @@ def reboot_unoq():
 @app.route('/api/rviz/launch/<mode>', methods=['POST'])
 def launch_rviz(mode):
     global active_processes
-    if 'rviz' in active_processes and active_processes['rviz'].poll() is None:
-        active_processes['rviz'].terminate()
-        
-    subprocess.run("pkill -f rviz2 2>/dev/null || true", shell=True)
-    subprocess.run("pkill -f imu_dead_reckoning 2>/dev/null || true", shell=True)
+    subprocess.run("pkill -9 -f rviz2 2>/dev/null || true", shell=True)
+    subprocess.run("pkill -9 -f imu_dead_reckoning 2>/dev/null || true", shell=True)
 
     ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
     
     if mode == 'imu':
-        cmd = f"bash {ws_dir}/view_imu.sh &"
+        cmd = f"bash {ws_dir}/view_imu.sh"
     elif mode == 'integral':
-        cmd = f"bash {ws_dir}/view_imu_integral.sh &"
+        cmd = f"bash {ws_dir}/view_imu_integral.sh"
     elif mode == 'slam':
-        cmd = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://{ws_dir}/cyclonedds.xml && ros2 launch my_robot_nav imu_slam.launch.py &"
+        cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
     else:
-        cmd = f"rviz2 &"
+        cmd = f"source /opt/ros/jazzy/setup.bash && rviz2"
 
-    proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+    proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=get_exec_env())
     active_processes['rviz'] = proc
     return jsonify({'success': True, 'message': f'Launched visualizer for mode: {mode}'})
 
@@ -258,15 +271,14 @@ def stop_rviz():
 @app.route('/api/slam/start', methods=['POST'])
 def start_slam():
     global active_processes
-    # Clean up previous SLAM/EKF/RViz instances
-    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2' 2>/dev/null || true", shell=True)
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|ekf_node|qos_relay|rviz2|imu_slam.launch.py' 2>/dev/null || true", shell=True)
     
     ws_dir = '/home/ros/my_robot_ws' if os.path.exists('/home/ros/my_robot_ws') else '/home/bliss/my_robot_ws'
-    cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://{ws_dir}/cyclonedds.xml && ros2 launch my_robot_nav imu_slam.launch.py"
-    proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+    cmd = f"source /opt/ros/jazzy/setup.bash && source {ws_dir}/install/setup.bash 2>/dev/null || true && ros2 launch my_robot_nav imu_slam.launch.py"
+    proc = subprocess.Popen(cmd, shell=True, executable='/bin/bash', env=get_exec_env())
     active_processes['slam'] = proc
     telemetry['slam_running'] = True
-    return jsonify({'success': True, 'message': 'SLAM Toolbox & EKF Mapping pipeline launched with RViz'})
+    return jsonify({'success': True, 'message': 'SLAM Mapping pipeline & RViz window launched'})
 
 @app.route('/api/slam/stop', methods=['POST'])
 def stop_slam():
@@ -283,7 +295,7 @@ def save_map():
     target_path = os.path.join(save_dir, map_name)
 
     cmd = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && ros2 run nav2_map_server map_saver_cli -f {target_path}"
-    res = subprocess.run(cmd, shell=True, executable='/bin/bash', capture_output=True, text=True)
+    res = subprocess.run(cmd, shell=True, executable='/bin/bash', env=get_exec_env(), capture_output=True, text=True)
     if res.returncode == 0:
         return jsonify({'success': True, 'message': f'Map saved successfully to {target_path}.yaml', 'map_name': map_name})
     else:
