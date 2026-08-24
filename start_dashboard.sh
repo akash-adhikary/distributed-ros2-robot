@@ -4,8 +4,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Clean up previous instances
-pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py' 2>/dev/null || true
-docker exec -t thirsty_burnell pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py' 2>/dev/null || true
+pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py|qos_relay' 2>/dev/null || true
+docker exec -t thirsty_burnell pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py|qos_relay' 2>/dev/null || true
 
 echo "========================================================="
 echo "  STARTING DISTRIBUTED ROS 2 ROBOT CONTROL HUB"
@@ -23,10 +23,6 @@ if command -v ros2 &> /dev/null; then
     export DISPLAY=:0
     export QT_X11_NO_MITSHM=1
     
-    # 1. Launch standalone ROS 2 Telemetry Bridge in background
-    python3 /home/ros/my_robot_ws/src/my_robot_dashboard/telemetry_bridge.py &
-    
-    # 2. Launch high-speed Flask Server in foreground
     python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
 else
     CONTAINER_ID=$(docker ps -q --filter "name=my_robot_ws" | head -n 1)
@@ -45,10 +41,6 @@ else
         export DISPLAY=:0
         export QT_X11_NO_MITSHM=1
         
-        # 1. Launch standalone ROS 2 Telemetry Bridge in background
-        python3 /home/ros/my_robot_ws/src/my_robot_dashboard/telemetry_bridge.py &
-        
-        # 2. Launch high-speed Flask Server in foreground
         python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
     "
 fi

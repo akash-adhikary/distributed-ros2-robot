@@ -3,15 +3,16 @@
     <Domain id="any">
         <General>
             <Interfaces>
-                <NetworkInterface name="wlp4s0" />
+                <NetworkInterface name="wlp4s0" multicast="true" />
             </Interfaces>
             <AllowMulticast>true</AllowMulticast>
         </General>
         <Discovery>
-            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
             <Peers>
                 <Peer address="192.168.1.17"/>
             </Peers>
+            <ParticipantIndex>auto</ParticipantIndex>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
         </Discovery>
     </Domain>
 </CycloneDDS>
