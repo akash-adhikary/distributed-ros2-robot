@@ -329,12 +329,16 @@ gh issue create --title "<Component>: <Clear description>" --body "<Technical re
 - Branching: Always branch from `main` (e.g., `feature/lidar-imu-slam-fusion` or `fix/i2c-timeout`).
 - Commits: Reference the issue number in the commit message (e.g., `feat(slam): implement QoS relay and EKF fusion (#1)`).
 
-### 3. Resolution & Closure Protocol
-When an issue is resolved and tested:
-```bash
-gh issue close <issue_number> --comment "### Resolution Summary
-1. Root Cause / Architecture: ...
-2. Changes Implemented: ...
-3. Verification & Test Logs: ...
-4. Linked Commits: ..."
-```
+### 4. Completed GitHub Issues Traceability Matrix
+
+| Issue | Type | Title | Status | Linked Commit | Key Artifacts |
+|---|---|---|---|---|---|
+| **#1** | Feature | Robust 2D SLAM Sensor Fusion (RPLidar + BNO086 IMU) | Closed | `5e4769a` | `imu_slam.launch.py`, `qos_relay.py` |
+| **#2** | Fix | Eliminate Yaw Jitter via Game Rotation Vector ($0.35$ SLERP) | Closed | `5e4769a` | `BnoTest.ino`, `imu_publisher.py` |
+| **#3** | Feature | Post-Processing Manhattan Wall Regularization & Line Snapping | Closed | `e57d607` | `map_regularizer.py`, `app.py` |
+| **#4** | Refactor | System Robustness: Singleton Process Guard & Emergency Shutdown | Closed | `fd5ba89` | `app.py`, `index.html` |
+| **#5** | Enhancement | Multi-Room SLAM Quality & Tilt-Gated Scan Filtering | Closed | `e57d607` | `qos_relay.py`, `slam_toolbox_params.yaml` |
+
+---
+
+## 8. Summary of Failures & Breakthrough Solutions (Cumulative Reference)
