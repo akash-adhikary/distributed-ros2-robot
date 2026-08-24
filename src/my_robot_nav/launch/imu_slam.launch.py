@@ -59,24 +59,29 @@ def generate_launch_description():
         
         # 5. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
         TimerAction(
-            period=2.5,
+            period=1.5,
             actions=[
                 ExecuteProcess(
                     cmd=['bash', '-c',
                          'ros2 lifecycle set /slam_toolbox configure 2>/dev/null || true; '
-                         'sleep 1; '
+                         'sleep 0.8; '
                          'ros2 lifecycle set /slam_toolbox activate 2>/dev/null || true'],
                     output='screen'
                 )
             ]
         ),
         
-        # 6. RViz2 Visualizer
-        Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            output='screen',
-            arguments=['-d', rviz_config_file]
+        # 6. RViz2 Visualizer (Starts after SLAM is ACTIVE to guarantee 'map' frame exists)
+        TimerAction(
+            period=3.5,
+            actions=[
+                Node(
+                    package='rviz2',
+                    executable='rviz2',
+                    name='rviz2',
+                    output='screen',
+                    arguments=['-d', rviz_config_file]
+                )
+            ]
         )
     ])
