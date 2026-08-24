@@ -5,6 +5,11 @@
             <Interfaces>
                 <NetworkInterface name="wlp4s0" />
             </Interfaces>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
         </General>
+        <Discovery>
+            <ParticipantIndex>auto</ParticipantIndex>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+        </Discovery>
     </Domain>
 </CycloneDDS>

@@ -2,6 +2,8 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, Imu
+from geometry_msgs.msg import TransformStamped
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import math
 
@@ -49,12 +51,45 @@ class QoSRelay(Node):
         self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, sub_qos)
         self.pub_imu = self.create_publisher(Imu, '/imu_reliable', pub_qos)
         
+        # Static Transforms for Sensor Mounting Geometry
+        self.tf_static_broadcaster = StaticTransformBroadcaster(self)
+        self.publish_static_transforms()
+        
         # Jitter filter state
         self.filt_quat = [1.0, 0.0, 0.0, 0.0]
         self.quat_smooth_alpha = 0.40
-        self.max_angular_jump = 0.6  # Outlier threshold (rad)
+        self.max_angular_jump = 0.6
         
-        self.get_logger().info('QoS Relay & Jitter-Filter active on /scan_reliable and /imu_reliable.')
+        self.get_logger().info('QoS Relay, Static TF & Jitter-Filter active on /scan_reliable and /imu_reliable.')
+
+    def publish_static_transforms(self):
+        now = self.get_clock().now().to_msg()
+        
+        # base_link -> laser
+        t1 = TransformStamped()
+        t1.header.stamp = now
+        t1.header.frame_id = 'base_link'
+        t1.child_frame_id = 'laser'
+        t1.transform.translation.z = 0.1
+        t1.transform.rotation.w = 1.0
+        
+        # base_link -> laser_frame
+        t2 = TransformStamped()
+        t2.header.stamp = now
+        t2.header.frame_id = 'base_link'
+        t2.child_frame_id = 'laser_frame'
+        t2.transform.translation.z = 0.1
+        t2.transform.rotation.w = 1.0
+        
+        # base_link -> imu_link
+        t3 = TransformStamped()
+        t3.header.stamp = now
+        t3.header.frame_id = 'base_link'
+        t3.child_frame_id = 'imu_link'
+        t3.transform.translation.z = 0.05
+        t3.transform.rotation.w = 1.0
+        
+        self.tf_static_broadcaster.sendTransform([t1, t2, t3])
 
     def scan_cb(self, msg):
         msg.header.stamp = self.get_clock().now().to_msg()
