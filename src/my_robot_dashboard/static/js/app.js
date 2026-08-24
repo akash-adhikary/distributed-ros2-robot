@@ -217,9 +217,9 @@ function updateUI(data) {
 function apiCall(endpoint, payload = null) {
     const opts = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
     };
-    if (payload) opts.body = JSON.stringify(payload);
 
     fetch(endpoint, opts)
         .then(async res => {

@@ -305,7 +305,8 @@ def index():
 
 @app.route('/api/config/ip', methods=['POST'])
 def set_ip():
-    new_ip = request.json.get('ip', '').strip()
+    req_data = request.get_json(silent=True) or {}
+    new_ip = req_data.get('ip', '').strip()
     if new_ip:
         robot_config['ip'] = new_ip
         telemetry['robot_ip'] = new_ip
@@ -474,11 +475,12 @@ def stop_slam():
 
 @app.route('/api/slam/save_map', methods=['POST'])
 def save_map():
-    map_name = request.json.get('name', f"map_{int(time.time())}") if request.is_json else f"map_{int(time.time())}"
+    req_data = request.get_json(silent=True) or {}
+    map_name = req_data.get('name', f"map_{int(time.time())}")
     ws = get_ws_dir()
-    save_dir = f'{ws}/src/my_robot_nav/maps'
-    os.makedirs(save_dir, exist_ok=True)
-    target_path = os.path.join(save_dir, map_name)
+    maps_dir = f'{ws}/src/my_robot_nav/maps'
+    os.makedirs(maps_dir, exist_ok=True)
+    target_path = os.path.join(maps_dir, map_name)
 
     cyclone = os.environ.get('CYCLONEDDS_URI', '')
     cmd = (
@@ -548,7 +550,8 @@ def regularize_map():
     Applies Manhattan World 90-degree orthogonal line snapping to a map.
     Auto-saves live map if no saved map is found.
     """
-    map_name = request.json.get('name', '') if request.is_json else ''
+    req_data = request.get_json(silent=True) or {}
+    map_name = req_data.get('name', '')
     ws = get_ws_dir()
     maps_dir = f'{ws}/src/my_robot_nav/maps'
     os.makedirs(maps_dir, exist_ok=True)
