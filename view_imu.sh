@@ -4,10 +4,10 @@ set -e
 export ROS_DOMAIN_ID=42
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-echo "Starting IMU RViz visualizer & TF broadcaster on Laptop..."
+echo "Starting Dynamic IMU-to-TF Visualizer & RViz on Laptop..."
 
-# Start static transform for base_link -> imu_link in background
-ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 base_link imu_link &
+# Run dynamic IMU-to-TF broadcaster in background
+python3 /home/ros/my_robot_ws/src/my_robot_nav/scripts/imu_tf_broadcaster.py &
 TF_PID=$!
 
 trap "kill $TF_PID 2>/dev/null || true" EXIT
