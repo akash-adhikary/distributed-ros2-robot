@@ -4,6 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, Imu
 from geometry_msgs.msg import TransformStamped
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+from tf2_ros.transform_broadcaster import TransformBroadcaster
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import math
 
@@ -45,22 +46,28 @@ class QoSRelay(Node):
             depth=10
         )
         
-        self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, sub_qos)
-        self.pub_scan = self.create_publisher(LaserScan, '/scan_reliable', pub_qos)
+        self.sub_scan = self.create_subscription(LaserScan, '/scan', self.scan_cb, 10)
+        self.pub_scan = self.create_publisher(LaserScan, '/scan_reliable', 10)
         
-        self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, sub_qos)
-        self.pub_imu = self.create_publisher(Imu, '/imu_reliable', pub_qos)
+        self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_cb, 10)
+        self.pub_imu = self.create_publisher(Imu, '/imu_reliable', 10)
         
         # Static Transforms for Sensor Mounting Geometry
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
         self.publish_static_transforms()
         
+        # Dynamic Odometry Transform Broadcaster (odom -> base_link)
+        self.tf_broadcaster = TransformBroadcaster(self)
+        
         # Jitter filter state
         self.filt_quat = [1.0, 0.0, 0.0, 0.0]
-        self.quat_smooth_alpha = 0.40
+        self.quat_smooth_alpha = 0.35
         self.max_angular_jump = 0.6
         
-        self.get_logger().info('QoS Relay, Static TF & Jitter-Filter active on /scan_reliable and /imu_reliable.')
+        # 50 Hz continuous broadcast timer ensuring odom frame is ALWAYS active
+        self.create_timer(0.02, self.broadcast_odom_tf)
+        
+        self.get_logger().info('QoS Relay active: Broadcasting continuous odom -> base_link and static sensor TFs.')
 
     def publish_static_transforms(self):
         now = self.get_clock().now().to_msg()
@@ -90,6 +97,34 @@ class QoSRelay(Node):
         t3.transform.rotation.w = 1.0
         
         self.tf_static_broadcaster.sendTransform([t1, t2, t3])
+
+    def broadcast_odom_tf(self):
+        # Broadcast odom -> base_link with forward time buffer (+50ms) to prevent extrapolation errors
+        now = self.get_clock().now()
+        stamp = (now + rclpy.duration.Duration(seconds=0.05)).to_msg()
+        
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'base_link'
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
+        t.transform.translation.z = 0.0
+        
+        # Lock yaw heading from IMU filtered quaternion (2D planar mode: only yaw rotation)
+        w, x, y, z = self.filt_quat
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        # Convert planar yaw to quaternion
+        half_yaw = yaw * 0.5
+        t.transform.rotation.w = math.cos(half_yaw)
+        t.transform.rotation.x = 0.0
+        t.transform.rotation.y = 0.0
+        t.transform.rotation.z = math.sin(half_yaw)
+        
+        self.tf_broadcaster.sendTransform(t)
 
     def scan_cb(self, msg):
         msg.header.stamp = self.get_clock().now().to_msg()

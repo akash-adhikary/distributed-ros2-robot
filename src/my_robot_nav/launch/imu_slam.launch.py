@@ -6,12 +6,11 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     nav_pkg = get_package_share_directory('my_robot_nav')
-    ekf_params_file = os.path.join(nav_pkg, 'config', 'ekf_imu_only.yaml')
     slam_params_file = os.path.join(nav_pkg, 'config', 'slam_toolbox_params.yaml')
     rviz_config_file = os.path.join(nav_pkg, 'config', 'mapping.rviz')
     
     return LaunchDescription([
-        # 1. QoS, Local Timestamp & SLERP Jitter Filter Relay
+        # 1. QoS Relay, Continuous 50Hz Odometry (odom -> base_link) & Static Sensor TFs
         Node(
             package='my_robot_nav',
             executable='qos_relay.py',
@@ -19,36 +18,7 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # 2. Modern ROS 2 Jazzy Static Transform Publishers
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_to_laser',
-            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser']
-        ),
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_to_laser_frame',
-            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser_frame']
-        ),
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_to_imu',
-            arguments=['--x', '0', '--y', '0', '--z', '0.05', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'imu_link']
-        ),
-        
-        # 3. EKF Node for Odometry & Rotational Heading (odom -> base_link)
-        Node(
-            package='robot_localization',
-            executable='ekf_node',
-            name='ekf_filter_node',
-            output='screen',
-            parameters=[ekf_params_file]
-        ),
-        
-        # 4. SLAM Toolbox: Real-Time Async Mapping & Loop Closure (map -> odom)
+        # 2. SLAM Toolbox: Real-Time Async Mapping & Loop Closure (map -> odom)
         Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
@@ -57,23 +27,23 @@ def generate_launch_description():
             parameters=[slam_params_file]
         ),
         
-        # 5. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
+        # 3. Deterministic Lifecycle Activator (Transitions slam_toolbox to ACTIVE state)
         TimerAction(
-            period=1.5,
+            period=1.2,
             actions=[
                 ExecuteProcess(
                     cmd=['bash', '-c',
                          'ros2 lifecycle set /slam_toolbox configure 2>/dev/null || true; '
-                         'sleep 0.8; '
+                         'sleep 0.5; '
                          'ros2 lifecycle set /slam_toolbox activate 2>/dev/null || true'],
                     output='screen'
                 )
             ]
         ),
         
-        # 6. RViz2 Visualizer (Starts after SLAM is ACTIVE to guarantee 'map' & 'odom' exist)
+        # 4. RViz2 Visualizer
         TimerAction(
-            period=3.5,
+            period=2.5,
             actions=[
                 Node(
                     package='rviz2',

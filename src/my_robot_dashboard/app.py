@@ -4,9 +4,8 @@ import sys
 import json
 import time
 import math
-import pexpect
-import threading
 import subprocess
+import threading
 import socket
 from flask import Flask, render_template, jsonify, request, Response
 from flask_cors import CORS
@@ -38,7 +37,7 @@ robot_config = {
 
 telemetry = {
     'robot_ip': robot_config['ip'],
-    'unoq_online': False,
+    'unoq_online': True,
     'lidar_running': False,
     'imu_running': False,
     'slam_running': False,
@@ -75,7 +74,6 @@ class DashboardRosNode(Node):
         telemetry['imu_rate'] = round(len(imu_msg_times) / 2.0, 1)
         telemetry['imu_running'] = (telemetry['imu_rate'] > 5.0)
 
-        # Cap UI updates to 30 Hz
         if now - last_imu_update < 0.033:
             return
         last_imu_update = now
@@ -111,7 +109,6 @@ class DashboardRosNode(Node):
         telemetry['lidar_rate'] = round(len(lidar_msg_times) / 2.0, 1)
         telemetry['lidar_running'] = (telemetry['lidar_rate'] > 2.0)
 
-        # Cap radar updates to 10 Hz
         if now - last_scan_update < 0.09:
             return
         last_scan_update = now
@@ -130,30 +127,26 @@ def non_blocking_ros_spin():
     node = DashboardRosNode()
     while rclpy.ok():
         rclpy.spin_once(node, timeout_sec=0.008)
-        time.sleep(0.01) # Yields GIL to Flask threads smoothly!
+        time.sleep(0.01)
     node.destroy_node()
     rclpy.shutdown()
 
 ros_thread = threading.Thread(target=non_blocking_ros_spin, daemon=True)
 ros_thread.start()
 
-def ssh_unoq_cmd(cmd, timeout=15):
+def ssh_unoq_cmd(cmd, timeout=12):
     ip = robot_config['ip']
+    password = robot_config['pass']
+    user = robot_config['user']
+    ssh_cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=4 {user}@{ip} \"{cmd}\""
     try:
-        child = pexpect.spawn(f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 {robot_config['user']}@{ip}", encoding='utf-8')
-        res = child.expect([r'[pP]assword:', pexpect.TIMEOUT, pexpect.EOF], timeout=5)
-        if res != 0:
+        res = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        if res.returncode == 0:
+            telemetry['unoq_online'] = True
+            return True, res.stdout.strip()
+        else:
             telemetry['unoq_online'] = False
-            return False, f"Could not connect to {ip} (Timeout / Unreachable)"
-        child.sendline(robot_config['pass'])
-        child.expect([r'\$ '], timeout=8)
-        child.sendline(cmd)
-        child.expect([r'\$ '], timeout=timeout)
-        output = child.before
-        child.sendline("exit")
-        child.expect(pexpect.EOF)
-        telemetry['unoq_online'] = True
-        return True, output
+            return False, res.stderr.strip() or res.stdout.strip()
     except Exception as e:
         telemetry['unoq_online'] = False
         return False, str(e)
@@ -196,7 +189,7 @@ def sse_stream():
             try:
                 data = json.dumps(telemetry)
                 yield f"data: {data}\n\n"
-                time.sleep(0.04) # Steady 25 FPS SSE stream
+                time.sleep(0.04) # Steady 25 FPS
             except GeneratorExit:
                 break
             except Exception:
