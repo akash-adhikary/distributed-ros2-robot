@@ -193,6 +193,36 @@ graph TD
 
 ---
 
+### Failure 12: Karto Mapper Fatal Probability Search Crash in `slam_toolbox`
+- **Symptom**: SLAM immediately aborts after activation with `Mapper FATAL ERROR - unable to get pointer in probability search!` (`exit code -6 / SIGABRT`). No `/map` topic published, and RViz displays freeze.
+- **Root Cause**: `slam_toolbox`'s Karto 2D scan matcher aborts in `ScanMatcher::MatchScan` when `use_scan_barycenter: true`, `use_response_expansion: true`, or asymmetric search bounds (`correlation_search_space_dimension: 0.45` with step `0.01`) evaluate edge rays beyond the allocated probability table cells for RPLidar C1.
+- **Breakthrough Fix**: Configured symmetric, robust bounds in [`slam_toolbox_params.yaml`](file:///home/bliss/my_robot_ws/src/my_robot_nav/config/slam_toolbox_params.yaml):
+  ```yaml
+  use_scan_barycenter: false
+  use_response_expansion: false
+  correlation_search_space_dimension: 0.5
+  correlation_search_space_resolution: 0.01
+  correlation_search_space_smear_deviation: 0.10
+  ```
+
+---
+
+### Failure 13: DDS Bridge Destruction on SLAM Subprocess Teardown
+- **Symptom**: Starting SLAM caused the sensor streams in the web UI (IMU and LiDAR) to freeze, and `/scan` dropped to 0 Hz.
+- **Root Cause**: `app.py`'s `start_slam()` was executing `pkill -9 -f '...qos_relay...'`, destroying the central DDS bridge node that was republishing `/scan_reliable` and broadcasting `odom -> base_link`. Recreating the node triggered new CycloneDDS participant discovery storms across Wi-Fi.
+- **Breakthrough Fix**: Decoupled `qos_relay.py` into a persistent daemon started at dashboard boot. SLAM start/stop routines now strictly manage `slam_toolbox` and `rviz2` without ever killing or restarting the underlying TF/sensor bridge.
+
+---
+
+### Failure 14: Asymmetric DDS Multicast Drops Over Wi-Fi
+- **Symptom**: Nodes on Uno Q and Laptop could discover topic names (`ros2 topic list`), but message payloads on `/scan` and `/imu/data` dropped to 0 Hz over wireless routers with aggressive IGMP snooping.
+- **Root Cause**: Wireless access points frequently drop or rate-limit UDP multicast discovery announcements.
+- **Breakthrough Fix**: Added static bi-directional Unicast Peer configurations to `cyclonedds.xml` on both endpoints:
+  - Laptop (`192.168.1.15`): `<Peers><Peer address="192.168.1.17"/></Peers>`
+  - Uno Q (`192.168.1.17`): `<Peers><Peer address="192.168.1.15"/></Peers>`
+
+---
+
 ## 4. Key Source Code References
 
 ### 1. Uno Q STM32 Firmware (`BnoTest.ino`)
