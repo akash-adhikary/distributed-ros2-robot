@@ -1,0 +1,35 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "========================================================="
+echo "  STARTING DISTRIBUTED ROS 2 ROBOT CONTROL HUB"
+echo "  Web UI: http://localhost:5000"
+echo "========================================================="
+
+# Detect if running inside ROS 2 container or on host
+if command -v ros2 &> /dev/null; then
+    source /opt/ros/jazzy/setup.bash 2>/dev/null || true
+    source /home/ros/my_robot_ws/install/setup.bash 2>/dev/null || true
+    export ROS_DOMAIN_ID=42
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
+    
+    python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
+else
+    CONTAINER_ID=$(docker ps -q --filter "name=my_robot_ws" | head -n 1)
+    if [ -z "$CONTAINER_ID" ]; then
+        CONTAINER_ID="thirsty_burnell"
+    fi
+    echo "Launching Dashboard inside DevContainer ($CONTAINER_ID)..."
+    xhost +local: 2>/dev/null || true
+    docker exec -it -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix $CONTAINER_ID bash -c "
+        source /opt/ros/jazzy/setup.bash
+        source /home/ros/my_robot_ws/install/setup.bash 2>/dev/null || true
+        export ROS_DOMAIN_ID=42
+        export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+        export CYCLONEDDS_URI=file:///home/ros/my_robot_ws/cyclonedds.xml
+        python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
+    "
+fi

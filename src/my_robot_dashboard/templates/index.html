@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributed ROS 2 Robot Control & Diagnostic Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1rem;
+        }
+        .glow-btn:hover {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+    <!-- Top Navigation / Header -->
+    <header class="flex flex-col md:flex-row justify-between items-center mb-8 pb-4 border-b border-slate-800">
+        <div class="flex items-center space-x-4">
+            <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <i class="fa-solid fa-robot text-2xl text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight text-white">Distributed ROS 2 Robot Control Hub</h1>
+                <p class="text-xs text-slate-400">ROS 2 Jazzy &bull; Domain ID: 42 &bull; CycloneDDS Multi-Machine</p>
+            </div>
+        </div>
+        <!-- Global Health Status & IP Config -->
+        <div class="flex flex-wrap items-center gap-2 mt-4 md:mt-0">
+            <button onclick="changeRobotIp()" class="badge bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 cursor-pointer">
+                <i class="fa-solid fa-network-wired mr-1.5"></i> <span id="ip-display">192.168.1.17</span>
+            </button>
+            <span id="unoq-status" class="badge bg-slate-800 text-slate-400 border border-slate-700">
+                <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Uno Q Checking...
+            </span>
+            <span id="imu-badge" class="badge bg-slate-800 text-slate-400 border border-slate-700">
+                <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> IMU: 0.0 Hz
+            </span>
+            <span id="lidar-badge" class="badge bg-slate-800 text-slate-400 border border-slate-700">
+                <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Lidar: 0.0 Hz
+            </span>
+        </div>
+    </header>
+
+    <!-- Main Grid Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Column 1: Hardware & Sensor Controls -->
+        <div class="space-y-6">
+            <!-- Sensor Controls Card -->
+            <div class="card p-6 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fa-solid fa-microchip text-blue-400 mr-2"></i> Edge Sensor Control
+                </h2>
+                
+                <!-- RPLidar Section -->
+                <div class="p-4 bg-slate-800/60 rounded-xl mb-4 border border-slate-700/50">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="font-medium text-sm text-slate-200">RPLidar C1 (10 Hz)</span>
+                        <span id="lidar-state-tag" class="text-xs text-slate-400">Stopped</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="apiCall('/api/sensors/lidar/start')" class="glow-btn bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-play mr-1.5"></i> Start Scan
+                        </button>
+                        <button onclick="apiCall('/api/sensors/lidar/stop')" class="bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-stop mr-1.5"></i> Stop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BNO086 IMU Section -->
+                <div class="p-4 bg-slate-800/60 rounded-xl mb-4 border border-slate-700/50">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="font-medium text-sm text-slate-200">7Semi BNO086 (100 Hz)</span>
+                        <span id="imu-state-tag" class="text-xs text-slate-400">Stopped</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="apiCall('/api/sensors/imu/start')" class="glow-btn bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-satellite-dish mr-1.5"></i> Start IMU
+                        </button>
+                        <button onclick="apiCall('/api/sensors/imu/stop')" class="bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-power-off mr-1.5"></i> Stop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Uno Q System Operations -->
+                <div class="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50">
+                    <span class="font-medium text-sm text-slate-200 block mb-3">Uno Q System Ops</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="apiCall('/api/sensors/router/restart')" class="bg-amber-600/80 hover:bg-amber-500 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-rotate mr-1.5"></i> Reset Bridge
+                        </button>
+                        <button onclick="confirmAction('Reboot Uno Q hardware?', '/api/sensors/unoq/reboot')" class="bg-red-700 hover:bg-red-600 text-white text-xs font-semibold py-2 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-arrows-rotate mr-1.5"></i> Reboot Uno Q
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RViz Visualizer Launcher Card -->
+            <div class="card p-6 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fa-solid fa-vr-cardboard text-purple-400 mr-2"></i> RViz Visualizers
+                </h2>
+                <div class="space-y-2">
+                    <button onclick="apiCall('/api/rviz/launch/imu')" class="w-full bg-slate-800 hover:bg-purple-600 text-slate-200 hover:text-white text-xs font-semibold py-2.5 px-4 rounded-lg border border-slate-700 transition duration-200 flex items-center justify-between">
+                        <span><i class="fa-solid fa-compass mr-2 text-blue-400"></i> IMU 3D Orientation & Gesture RViz</span>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                    </button>
+                    <button onclick="apiCall('/api/rviz/launch/integral')" class="w-full bg-slate-800 hover:bg-purple-600 text-slate-200 hover:text-white text-xs font-semibold py-2.5 px-4 rounded-lg border border-slate-700 transition duration-200 flex items-center justify-between">
+                        <span><i class="fa-solid fa-route mr-2 text-emerald-400"></i> Pure Cumulative Double-Integrator RViz</span>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                    </button>
+                    <button onclick="apiCall('/api/rviz/launch/slam')" class="w-full bg-slate-800 hover:bg-purple-600 text-slate-200 hover:text-white text-xs font-semibold py-2.5 px-4 rounded-lg border border-slate-700 transition duration-200 flex items-center justify-between">
+                        <span><i class="fa-solid fa-map-location-dot mr-2 text-amber-400"></i> Unified SLAM Toolbox + EKF RViz</span>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                    </button>
+                    <button onclick="apiCall('/api/rviz/stop')" class="w-full bg-rose-950/60 hover:bg-rose-800 text-rose-300 hover:text-white text-xs font-semibold py-2 px-4 rounded-lg border border-rose-900/60 transition duration-200 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark mr-1.5"></i> Close All Visualizers
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: 3D IMU Telemetry & Model Display -->
+        <div class="space-y-6">
+            <!-- 3D IMU Canvas Card -->
+            <div class="card p-6 shadow-xl flex flex-col items-center">
+                <div class="w-full flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-semibold text-white flex items-center">
+                        <i class="fa-solid fa-cube text-cyan-400 mr-2"></i> 3D IMU Real-Time Pose
+                    </h2>
+                    <span class="text-xs text-slate-400" id="imu-hz-text">0.0 Hz</span>
+                </div>
+                
+                <!-- Three.js Canvas Container -->
+                <div id="three-container" class="w-full h-56 bg-slate-950/80 rounded-xl overflow-hidden border border-slate-800 relative flex items-center justify-center">
+                    <span id="three-loader" class="text-xs text-slate-500 absolute">Loading 3D Engine...</span>
+                </div>
+
+                <!-- Orientation Gauges -->
+                <div class="grid grid-cols-3 gap-3 w-full mt-4">
+                    <div class="bg-slate-800/80 p-2.5 rounded-xl text-center border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Roll (X)</span>
+                        <p id="val-roll" class="text-lg font-mono font-bold text-red-400">0.0°</p>
+                    </div>
+                    <div class="bg-slate-800/80 p-2.5 rounded-xl text-center border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Pitch (Y)</span>
+                        <p id="val-pitch" class="text-lg font-mono font-bold text-green-400">0.0°</p>
+                    </div>
+                    <div class="bg-slate-800/80 p-2.5 rounded-xl text-center border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Yaw (Z)</span>
+                        <p id="val-yaw" class="text-lg font-mono font-bold text-blue-400">0.0°</p>
+                    </div>
+                </div>
+
+                <!-- Linear Accel & Gyro Strip -->
+                <div class="grid grid-cols-2 gap-3 w-full mt-3">
+                    <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-xs">
+                        <span class="text-slate-400 block mb-1 font-semibold">Linear Accel (m/s²)</span>
+                        <div class="flex justify-between font-mono text-slate-300">
+                            <span>X: <b id="val-ax">0.0</b></span>
+                            <span>Y: <b id="val-ay">0.0</b></span>
+                            <span>Z: <b id="val-az">0.0</b></span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-xs">
+                        <span class="text-slate-400 block mb-1 font-semibold">Gyroscope (rad/s)</span>
+                        <div class="flex justify-between font-mono text-slate-300">
+                            <span>X: <b id="val-gx">0.0</b></span>
+                            <span>Y: <b id="val-gy">0.0</b></span>
+                            <span>Z: <b id="val-gz">0.0</b></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 3: RPLidar Polar Radar & SLAM Mapping -->
+        <div class="space-y-6">
+            <!-- 2D Polar Radar Card -->
+            <div class="card p-6 shadow-xl flex flex-col items-center">
+                <div class="w-full flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-semibold text-white flex items-center">
+                        <i class="fa-solid fa-radar text-emerald-400 mr-2"></i> 2D Lidar Polar Radar
+                    </h2>
+                    <span class="text-xs text-slate-400" id="lidar-hz-text">0.0 Hz</span>
+                </div>
+                
+                <!-- Radar Canvas -->
+                <div class="w-full h-56 bg-slate-950/80 rounded-xl overflow-hidden border border-slate-800 relative flex items-center justify-center">
+                    <canvas id="radar-canvas" width="280" height="220" class="block"></canvas>
+                </div>
+            </div>
+
+            <!-- SLAM Mapping & Map Saver Card -->
+            <div class="card p-6 shadow-xl">
+                <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
+                    <i class="fa-solid fa-map text-amber-400 mr-2"></i> SLAM & Map Management
+                </h2>
+                
+                <div class="space-y-3">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="apiCall('/api/slam/start')" class="glow-btn bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold py-2.5 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-play mr-1.5"></i> Start SLAM
+                        </button>
+                        <button onclick="saveCurrentMap()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-3 rounded-lg transition duration-200 flex items-center justify-center">
+                            <i class="fa-solid fa-floppy-disk mr-1.5"></i> Save Map
+                        </button>
+                    </div>
+
+                    <!-- Saved Maps List Dropdown -->
+                    <div class="p-3 bg-slate-800/60 rounded-xl border border-slate-700/50">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-semibold text-slate-300">Saved Room Maps</span>
+                            <button onclick="loadSavedMaps()" class="text-[10px] text-blue-400 hover:underline">Refresh</button>
+                        </div>
+                        <ul id="saved-maps-list" class="space-y-1 text-xs text-slate-400 max-h-24 overflow-y-auto">
+                            <li class="italic text-slate-500">No maps saved yet.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3 rounded-xl border border-slate-700 shadow-2xl transition duration-300 transform translate-y-20 opacity-0 flex items-center space-x-3 z-50">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+        <span id="toast-msg" class="text-sm font-medium">Operation completed</span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        function changeRobotIp() {
+            const currentIp = document.getElementById('ip-display').innerText;
+            const newIp = prompt("Enter Arduino Uno Q IP Address:", currentIp);
+            if (newIp && newIp !== currentIp) {
+                fetch('/api/config/ip', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ip: newIp})
+                })
+                .then(r => r.json())
+                .then(d => {
+                    document.getElementById('ip-display').innerText = newIp;
+                    showToast(d.message, d.success);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
