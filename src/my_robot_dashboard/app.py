@@ -545,25 +545,45 @@ def shutdown_all():
 @app.route('/api/slam/regularize_map', methods=['POST'])
 def regularize_map():
     """
-    Applies Manhattan World 90-degree orthogonal line snapping to a saved map.
+    Applies Manhattan World 90-degree orthogonal line snapping to a map.
+    Auto-saves live map if no saved map is found.
     """
     map_name = request.json.get('name', '') if request.is_json else ''
     ws = get_ws_dir()
     maps_dir = f'{ws}/src/my_robot_nav/maps'
+    os.makedirs(maps_dir, exist_ok=True)
+    
+    yaml_files = sorted([f for f in os.listdir(maps_dir) if f.endswith('.yaml') and not f.endswith('_regularized.yaml')], reverse=True)
     
     if not map_name:
-        # Pick latest map
-        if not os.path.exists(maps_dir):
-            return jsonify({'success': False, 'message': 'No maps directory found'})
-        yaml_files = sorted([f for f in os.listdir(maps_dir) if f.endswith('.yaml') and not f.endswith('_regularized.yaml')], reverse=True)
-        if not yaml_files:
-            return jsonify({'success': False, 'message': 'No saved maps found to regularize. Save a map first!'})
-        map_name = yaml_files[0]
+        if yaml_files:
+            map_name = yaml_files[0]
+        else:
+            # Auto-save live map
+            auto_name = f"map_{int(time.time())}"
+            target_path = os.path.join(maps_dir, auto_name)
+            cyclone = os.environ.get('CYCLONEDDS_URI', '')
+            cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"export ROS_DOMAIN_ID=42 && "
+                f"export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+                f"export CYCLONEDDS_URI={cyclone} && "
+                f"ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "
+                f"\"{{name: {{data: '{target_path}'}}}}\""
+            )
+            subprocess.run(cmd, shell=True, executable='/bin/bash', env=get_exec_env(), timeout=8)
+            if not (os.path.exists(f"{target_path}.yaml") or os.path.exists(f"{target_path}.pgm")):
+                # Fallback saver
+                cmd2 = f"source /opt/ros/jazzy/setup.bash && export ROS_DOMAIN_ID=42 && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI={cyclone} && ros2 run nav2_map_server map_saver_cli -f {target_path}"
+                subprocess.run(cmd2, shell=True, executable='/bin/bash', env=get_exec_env(), timeout=8)
+            map_name = f"{auto_name}.yaml"
 
     yaml_path = os.path.join(maps_dir, map_name if map_name.endswith('.yaml') else f"{map_name}.yaml")
     
+    if not os.path.exists(yaml_path):
+        return jsonify({'success': False, 'message': f'Map file {map_name} not found. Please click "Start SLAM Mapping" and "Save Map" first!'})
+
     try:
-        # Import map regularizer utility
         sys.path.insert(0, f'{ws}/src/my_robot_nav/scripts')
         from map_regularizer import regularize_saved_map_file
         
@@ -571,7 +591,7 @@ def regularize_map():
         if ok:
             return jsonify({
                 'success': True,
-                'message': f"Map {map_name} snapped to orthogonal boxy walls!",
+                'message': f"Map {map_name} snapped to 90° boxy walls ({res['stats']['snapped_walls']} walls snapped)!",
                 'regularized_yaml': os.path.basename(res['regularized_yaml']),
                 'regularized_svg': os.path.basename(res['regularized_svg']),
                 'stats': res['stats']
