@@ -8,7 +8,7 @@ import pexpect
 import threading
 import subprocess
 import socket
-from flask import Flask, render_template, jsonify, request, Response, send_file
+from flask import Flask, render_template, jsonify, request, Response
 from flask_cors import CORS
 
 # Configure ROS 2 CycloneDDS environment
@@ -62,6 +62,8 @@ telemetry = {
 
 imu_msg_times = []
 lidar_msg_times = []
+last_imu_update_time = 0.0
+last_scan_update_time = 0.0
 active_processes = {}
 
 class DashboardRosNode(Node):
@@ -72,12 +74,17 @@ class DashboardRosNode(Node):
         self.get_logger().info("Dashboard ROS 2 Subscriber Node initialized on Domain 42.")
 
     def imu_cb(self, msg):
-        global telemetry, imu_msg_times
+        global telemetry, imu_msg_times, last_imu_update_time
         now = time.time()
         imu_msg_times.append(now)
         imu_msg_times = [t for t in imu_msg_times if now - t <= 2.0]
         telemetry['imu_rate'] = round(len(imu_msg_times) / 2.0, 1)
         telemetry['imu_running'] = (telemetry['imu_rate'] > 5.0)
+
+        # Rate-limit UI state updates to 30 Hz to prevent GIL / SSE thread starvation
+        if now - last_imu_update_time < 0.033:
+            return
+        last_imu_update_time = now
 
         w = msg.orientation.w
         x = msg.orientation.x
@@ -103,14 +110,19 @@ class DashboardRosNode(Node):
         telemetry['gyro'] = {'x': round(msg.angular_velocity.x, 2), 'y': round(msg.angular_velocity.y, 2), 'z': round(msg.angular_velocity.z, 2)}
 
     def scan_cb(self, msg):
-        global telemetry, lidar_msg_times
+        global telemetry, lidar_msg_times, last_scan_update_time
         now = time.time()
         lidar_msg_times.append(now)
         lidar_msg_times = [t for t in lidar_msg_times if now - t <= 2.0]
         telemetry['lidar_rate'] = round(len(lidar_msg_times) / 2.0, 1)
         telemetry['lidar_running'] = (telemetry['lidar_rate'] > 2.0)
 
-        step = max(1, len(msg.ranges) // 120)
+        # Rate-limit 2D radar updates to 10 Hz
+        if now - last_scan_update_time < 0.09:
+            return
+        last_scan_update_time = now
+
+        step = max(1, len(msg.ranges) // 100)
         points = []
         for i in range(0, len(msg.ranges), step):
             r = msg.ranges[i]
@@ -188,9 +200,12 @@ def get_telemetry():
 def sse_stream():
     def event_stream():
         while True:
-            data = json.dumps(telemetry)
-            yield f"data: {data}\n\n"
-            time.sleep(0.05)
+            try:
+                data = json.dumps(telemetry)
+                yield f"data: {data}\n\n"
+                time.sleep(0.04) # Steady 25 FPS SSE stream
+            except Exception:
+                break
     return Response(event_stream(), mimetype="text/event-stream")
 
 @app.route('/api/sensors/lidar/start', methods=['POST'])

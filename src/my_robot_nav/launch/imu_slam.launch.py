@@ -19,24 +19,24 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # 2. Static Transform Publishers (base_link to sensors)
+        # 2. Modern ROS 2 Jazzy Static Transform Publishers
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_laser',
-            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser']
+            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser']
         ),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_laser_frame',
-            arguments=['0', '0', '0.1', '0', '0', '0', 'base_link', 'laser_frame']
+            arguments=['--x', '0', '--y', '0', '--z', '0.1', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'laser_frame']
         ),
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='base_to_imu',
-            arguments=['0', '0', '0.05', '0', '0', '0', 'base_link', 'imu_link']
+            arguments=['--x', '0', '--y', '0', '--z', '0.05', '--yaw', '0', '--pitch', '0', '--roll', '0', '--frame-id', 'base_link', '--child-frame-id', 'imu_link']
         ),
         
         # 3. EKF Node for Odometry & Rotational Heading (odom -> base_link)
@@ -71,7 +71,7 @@ def generate_launch_description():
             ]
         ),
         
-        # 6. RViz2 Visualizer (Starts after SLAM is ACTIVE to guarantee 'map' frame exists)
+        # 6. RViz2 Visualizer (Starts after SLAM is ACTIVE to guarantee 'map' & 'odom' exist)
         TimerAction(
             period=3.5,
             actions=[

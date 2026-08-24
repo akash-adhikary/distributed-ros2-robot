@@ -1,6 +1,8 @@
 // Distributed Robot Control & Telemetry Frontend
 let scene, camera, renderer, imuMesh;
 let radarCanvas, radarCtx;
+let evtSource = null;
+let reconnectTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     initThreeJS();
@@ -138,7 +140,11 @@ function drawRadarSweep(points) {
 
 // ----------------- SSE REAL-TIME TELEMETRY STREAM ----------------- //
 function initEventStream() {
-    const evtSource = new EventSource('/api/stream');
+    if (evtSource) {
+        evtSource.close();
+    }
+    
+    evtSource = new EventSource('/api/stream');
 
     evtSource.onmessage = (event) => {
         try {
@@ -150,9 +156,13 @@ function initEventStream() {
     };
 
     evtSource.onerror = () => {
-        const badge = document.getElementById('unoq-status');
-        badge.className = "badge bg-rose-950/80 text-rose-300 border border-rose-800";
-        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 mr-2"></span> Uno Q Offline';
+        evtSource.close();
+        if (!reconnectTimer) {
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+                initEventStream();
+            }, 1500);
+        }
     };
 }
 
