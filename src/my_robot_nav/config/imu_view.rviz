@@ -6,36 +6,36 @@ Panels:
       Expanded:
         - /Global Options1
         - /TF1
-        - /Axes1
+        - /3D Trajectory Path1
       Splitter Ratio: 0.5
     Tree Height: 557
 Visualization Manager:
   Class: ""
   Displays:
     - Alpha: 0.5
-      Cell Size: 1
+      Cell Size: 0.5
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
       Enabled: true
       Line Style:
         Line Width: 0.03
         Value: Lines
-      Name: Grid
+      Name: Odom Grid Plane
       Normal Cell Count: 0
       Offset:
         X: 0
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 20
-      Reference Frame: base_link
+      Plane Cell Count: 40
+      Reference Frame: odom
       Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
       Frames:
         All Enabled: true
-      Marker Scale: 1.0
+      Marker Scale: 0.8
       Name: TF
       Show Arrows: true
       Show Axes: true
@@ -44,17 +44,35 @@ Visualization Manager:
         {}
       Update Interval: 0
       Value: true
-    - Class: rviz_default_plugins/Axes
+    - Class: rviz_default_plugins/Path
+      Color: 0; 255; 100
       Enabled: true
-      Length: 1.0
-      Name: IMU Orientation Axes
-      Radius: 0.05
-      Reference Frame: imu_link
+      Head Diameter: 0.05
+      Head Shape: Cylinder
+      Length: 0.1
+      Line Style: Lines
+      Line Width: 0.03
+      Name: 3D Trajectory Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.03
+      Shaft Length: 0.08
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /imu/dead_reckoning/path
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 30; 30; 30
-    Fixed Frame: base_link
+    Background Color: 25; 25; 28
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -70,7 +88,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.5
+      Distance: 3.0
       Focal Point:
         X: 0
         Y: 0
@@ -80,7 +98,7 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.4
-      Target Frame: base_link
+      Pitch: 0.45
+      Target Frame: odom
       Value: Orbit (rviz)
-      Yaw: 0.8
+      Yaw: 0.75

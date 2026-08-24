@@ -2,12 +2,13 @@ import pexpect, sys
 
 child = pexpect.spawn("ssh -o StrictHostKeyChecking=no arduino@192.168.1.17", encoding='utf-8')
 child.logfile = sys.stdout
-child.expect([r'[pP]assword:'], timeout=25)
-child.sendline("Askaban78@#")
-child.expect([r'arduino@blissy:\~\$ '], timeout=15)
 
-child.sendline("docker exec rplidar bash -c 'cat /root/.ros/log/*/rplidar_node*.log || echo No logs'")
-child.expect([r'arduino@blissy:\~\$ '], timeout=15)
+child.expect([r'[pP]assword:'], timeout=15)
+child.sendline("Askaban78@#")
+child.expect([r'\$ '], timeout=15)
+
+child.sendline("docker exec -t rplidar bash -c 'find / -name \"*rplidar*launch.py\" 2>/dev/null'")
+child.expect([r'\$ '], timeout=15)
 
 child.sendline("exit")
 child.expect(pexpect.EOF)

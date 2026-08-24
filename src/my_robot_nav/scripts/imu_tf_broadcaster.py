@@ -10,6 +10,7 @@ class ImuTfBroadcaster(Node):
         super().__init__('imu_tf_broadcaster')
         self.tf_broadcaster = TransformBroadcaster(self)
         self.sub = self.create_subscription(Imu, '/imu/data_raw', self.imu_callback, 10)
+        self.sub2 = self.create_subscription(Imu, '/imu/data', self.imu_callback, 10)
         self.get_logger().info('IMU-to-TF dynamic broadcaster started. Live orientation active.')
 
     def imu_callback(self, msg):
