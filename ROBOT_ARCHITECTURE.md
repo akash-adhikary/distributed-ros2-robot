@@ -28,3 +28,9 @@ This document serves as the permanent memory and source of truth for the robot's
 
 ## 4. Current Status
 *   End-to-End communication is established. Lidar successfully spins automatically on power.
+
+## 5. Strict Engineering Guidelines
+As instructed, the following principles must be followed by all agents and iterations:
+1. **Validation at Every Step:** Never assume a deployment worked. Always perform checks and validations (e.g. `ros2 topic hz`) after compiling or deploying nodes.
+2. **Centralized Launch:** The laptop's `launch_all.sh` must be the single source of truth. It should remotely hit the Uno Q and initiate the counterpart Docker containers natively via SSH. No orphaned background sessions or manual SSH required by the user.
+3. **No Garbage or Redundancy:** All code must exist in this central GitHub repository. No code should exist exclusively on the Uno Q pendrive (to prevent data loss if the pendrive is wiped). Clean up orphaned containers before launching new ones.
