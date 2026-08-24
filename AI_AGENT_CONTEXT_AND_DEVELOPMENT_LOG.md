@@ -4,6 +4,43 @@
 
 ---
 
+## ⚡ 0. MANDATORY PRE-FLIGHT MEMORY & ANTI-MISTAKE CHECKLIST
+> **CRITICAL RULE FOR ALL AI AGENTS**: Before writing any code, modifying configurations, or claiming a feature is working, you **MUST** read, internalize, and strictly adhere to these operational memory rules. Never skip these steps.
+
+### 🛑 Rule 1: Zero Zombie / Duplicate Instances (Singleton Process Lifecycle)
+- **Mistake made in past**: Launching scripts/nodes in the background without clean teardown, leading to multiple competing DDS participants, port collisions (e.g. 5050 jumping to 5051), and stale sockets that wasted hours of debugging.
+- **Enforced Standard**:
+  - `app.py` enforces a strict PID lockfile (`/tmp/my_robot_dashboard.pid`) and graceful takeover.
+  - Never run ad-hoc background daemons (`telemetry_bridge.py`, separate `qos_relay.py`) when `app.py` already manages them.
+  - Always verify existing PIDs (`ps aux | grep ...`) before spawning ROS nodes.
+
+### 🛑 Rule 2: Defensive REST & UI Serialization (No Unhandled HTML / 400 Exceptions)
+- **Mistake made in past**:
+  1. Using Flask's `request.json` without verifying request body existence $\rightarrow$ Flask throws `400 Bad Request: Failed to decode JSON object` on empty payloads.
+  2. Calling `res.json()` directly in JavaScript on non-200 or HTML error responses $\rightarrow$ Browser throws `SyntaxError: JSON.parse: unexpected character at line 1 column 1`.
+  3. Browser caching older JS scripts when UI routes/functions are added.
+- **Enforced Standard**:
+  - **Backend**: Always use `req_data = request.get_json(silent=True) or {}` across all Flask POST endpoints.
+  - **Frontend**: In `app.js`, always read `res.text()`, safely parse inside `try...catch`, and default `opts.body` to `JSON.stringify(payload || {})`.
+  - **Cache Invalidation**: Always bump the query version in `index.html` (e.g. `<script src="/static/js/app.js?v=X.X"></script>`) whenever modifying frontend assets.
+
+### 🛑 Rule 3: End-to-End Headless & Headful Verification (Never Guess or Assume)
+- **Mistake made in past**: Assuming an algorithm works without verifying sensor streams, TF2 coordinate transforms, and topic headers across both local and edge machines.
+- **Enforced Standard**:
+  - When building a feature, test the full pipeline end-to-end:
+    1. Sensors publishing on Uno Q (`/scan` @ 10 Hz, `/imu/data` @ 80+ Hz).
+    2. Dynamic TF tree published at 50 Hz (`map -> odom -> base_link -> laser`).
+    3. REST API response codes and UI Toast notifications tested with curl and browser checks.
+  - Never declare a task complete without verifiable logs.
+
+### 🛑 Rule 4: Mandatory GitHub Issue Traceability
+- **Enforced Standard**:
+  - Create a GitHub issue (`gh issue create`) for every bug, architectural change, or feature.
+  - Reference issue numbers in commits.
+  - Close issues with a structured summary of root causes, changes, test logs, and commit hashes.
+
+---
+
 ## 1. System Topology & Architecture
 
 ```mermaid
@@ -338,7 +375,23 @@ gh issue create --title "<Component>: <Clear description>" --body "<Technical re
 | **#3** | Feature | Post-Processing Manhattan Wall Regularization & Line Snapping | Closed | `e57d607` | `map_regularizer.py`, `app.py` |
 | **#4** | Refactor | System Robustness: Singleton Process Guard & Emergency Shutdown | Closed | `fd5ba89` | `app.py`, `index.html` |
 | **#5** | Enhancement | Multi-Room SLAM Quality & Tilt-Gated Scan Filtering | Closed | `e57d607` | `qos_relay.py`, `slam_toolbox_params.yaml` |
+| **#6** | Fix | Prevent HTTP 400 on Empty POST Payloads & Safe JSON Parsing | Closed | `920b741` | `app.py`, `app.js`, `index.html` |
 
 ---
 
 ## 8. Summary of Failures & Breakthrough Solutions (Cumulative Reference)
+
+### Failure 15: Flask `400 Bad Request` on Zero-Byte JSON POST Payloads
+- **Symptom**: Calling `POST /api/slam/regularize_map` without an explicit body payload caused Flask to throw `400 Bad Request: Failed to decode JSON object: Expecting value: line 1 column 1 (char 0)`.
+- **Root Cause**: When a client sends `Content-Type: application/json` with 0 body bytes, Flask's default `request.json` property parser rejects the stream before route logic executes.
+- **Breakthrough Fix**:
+  1. Updated all Flask route endpoints to use `req_data = request.get_json(silent=True) or {}`.
+  2. Updated frontend `apiCall` in `app.js` to serialize `opts.body = JSON.stringify(payload || {})` defensively.
+
+### Failure 16: Browser `SyntaxError: JSON.parse: unexpected character at line 1 column 1`
+- **Symptom**: Browser threw an unhandled syntax error exception on API failures.
+- **Root Cause**: `apiCall` was directly invoking `res.json()` on HTML error responses (`<!DOCTYPE html>`).
+- **Breakthrough Fix**:
+  1. Converted `apiCall` to read `res.text()` first, safely parsing JSON within a `try...catch` block.
+  2. Strips HTML tags from error strings to display clean human-readable toasts.
+  3. Added query versioning cache busting (`/static/js/app.js?v=5.0`).
