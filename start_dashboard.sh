@@ -4,8 +4,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Clean up previous instances
-pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py|qos_relay' 2>/dev/null || true
-docker exec -t thirsty_burnell pkill -9 -f 'src/my_robot_dashboard/app.py|src/my_robot_dashboard/telemetry_bridge.py|qos_relay' 2>/dev/null || true
+pkill -9 -f "app.py|telemetry_bridge|qos_relay|slam_toolbox|rviz2" 2>/dev/null || true
+docker exec -t thirsty_burnell bash -c 'pkill -9 -f "app.py|telemetry_bridge|qos_relay|slam_toolbox|rviz2" 2>/dev/null || true' 2>/dev/null || true
+
 
 echo "========================================================="
 echo "  STARTING DISTRIBUTED ROS 2 ROBOT CONTROL HUB"
