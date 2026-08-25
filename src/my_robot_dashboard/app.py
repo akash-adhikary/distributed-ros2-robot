@@ -190,15 +190,19 @@ class DashboardRosNode(Node):
 
 # ---- Non-blocking ROS spin thread ----
 def non_blocking_ros_spin():
-    global ros_node, ros_running
+    global ros_node, ros_running, telemetry
     try:
         rclpy.init()
         ros_node = DashboardRosNode()
         while ros_running and rclpy.ok():
             rclpy.spin_once(ros_node, timeout_sec=0.008)
+            now = time.time()
+            telemetry['unoq_online'] = (now - last_imu_update < 2.5) or (now - last_scan_update < 2.5)
+            telemetry['slam_running'] = ('slam_toolbox' in active_processes and active_processes['slam_toolbox'].poll() is None)
             time.sleep(0.01)
     except Exception as e:
         print(f"[ROS Thread] Exception: {e}", file=sys.stderr)
+
     finally:
         if ros_node:
             try:

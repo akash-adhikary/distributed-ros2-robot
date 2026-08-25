@@ -167,15 +167,26 @@ function initEventStream() {
 }
 
 function updateUI(data) {
-    // 1. Hardware Status Badges
+    // 1. Hardware Status Badges & Hardware-Aware Gating
+    isUnoqConnected = Boolean(data.unoq_online);
     const unoBadge = document.getElementById('unoq-status');
-    if (data.unoq_online) {
+    const btnLidarStart = document.getElementById('btn-lidar-start');
+
+    if (isUnoqConnected) {
         unoBadge.className = "badge bg-emerald-950/80 text-emerald-300 border border-emerald-800";
-        unoBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span> Uno Q Connected';
+        unoBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span> Uno Q Connected';
+        if (btnLidarStart && !btnLidarStart.dataset.originalHtml) {
+            btnLidarStart.title = "Start RPLidar scanner stream";
+            btnLidarStart.classList.remove('opacity-40', 'cursor-not-allowed');
+        }
     } else {
         unoBadge.className = "badge bg-slate-800 text-slate-400 border border-slate-700";
-        unoBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Uno Q Checking...';
+        unoBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 mr-2"></span> Uno Q Offline';
+        if (btnLidarStart && !btnLidarStart.dataset.originalHtml) {
+            btnLidarStart.title = "Uno Q is offline. Connect board to start scan.";
+        }
     }
+
 
     // Rates
     const imuBadge = document.getElementById('imu-badge');
@@ -213,8 +224,34 @@ function updateUI(data) {
     drawRadarSweep(data.lidar_points);
 }
 
-// ----------------- API ACTION HANDLERS ----------------- //
-function apiCall(endpoint, payload = null) {
+// ----------------- API ACTION HANDLERS WITH SPINNERS & GATING ----------------- //
+let isUnoqConnected = false;
+
+function setButtonLoading(btn, isLoading, loadingText = null) {
+    if (!btn) return;
+    if (isLoading) {
+        btn.dataset.originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i> ${loadingText || 'Processing...'}`;
+    } else {
+        btn.disabled = false;
+        if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+        }
+    }
+}
+
+function apiCall(endpoint, payload = null, btnElement = null) {
+    // 1. Hardware-Aware Pre-Flight Check for Sensor Launch
+    if (endpoint === '/api/sensors/lidar/start' && !isUnoqConnected) {
+        showToast("Cannot Start Scan: Arduino Uno Q is disconnected / offline.", false);
+        return;
+    }
+
+    if (btnElement) {
+        setButtonLoading(btnElement, true);
+    }
+
     const opts = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -227,7 +264,6 @@ function apiCall(endpoint, payload = null) {
             try {
                 return JSON.parse(rawText);
             } catch (e) {
-                // If HTML or plain text is returned
                 const cleanText = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
                 return {
                     success: res.ok,
@@ -240,15 +276,23 @@ function apiCall(endpoint, payload = null) {
         })
         .catch(err => {
             showToast(`Network Error: ${err.message || err}`, false);
+        })
+        .finally(() => {
+            if (btnElement) {
+                setButtonLoading(btnElement, false);
+            }
         });
 }
 
-function confirmAction(msg, endpoint) {
+function confirmAction(msg, endpoint, btnElement = null) {
     if (confirm(msg)) {
         if (endpoint === '/api/system/shutdown_all') {
             showToast("System shutting down completely...", true);
             if (evtSource) {
                 evtSource.close();
+            }
+            if (btnElement) {
+                setButtonLoading(btnElement, true, 'Shutting down...');
             }
             apiCall(endpoint);
             setTimeout(() => {
@@ -262,24 +306,24 @@ function confirmAction(msg, endpoint) {
             }, 800);
             return;
         }
-        apiCall(endpoint);
+        apiCall(endpoint, null, btnElement);
     }
 }
 
-
-function saveCurrentMap() {
+function saveCurrentMap(btnElement = null) {
     const mapName = prompt("Enter name for map file (e.g. room_map_1):", `map_${Date.now()}`);
     if (mapName) {
-        apiCall('/api/slam/save_map', { name: mapName });
+        apiCall('/api/slam/save_map', { name: mapName }, btnElement);
         setTimeout(loadSavedMaps, 2500);
     }
 }
 
-function regularizeLatestMap() {
+function regularizeLatestMap(btnElement = null) {
     showToast("Snapping map to 90° boxy walls...", true);
-    apiCall('/api/slam/regularize_map');
+    apiCall('/api/slam/regularize_map', null, btnElement);
     setTimeout(loadSavedMaps, 2500);
 }
+
 
 function loadSavedMaps() {
     fetch('/api/slam/list_maps')
