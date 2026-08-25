@@ -245,9 +245,27 @@ function apiCall(endpoint, payload = null) {
 
 function confirmAction(msg, endpoint) {
     if (confirm(msg)) {
+        if (endpoint === '/api/system/shutdown_all') {
+            showToast("System shutting down completely...", true);
+            if (evtSource) {
+                evtSource.close();
+            }
+            apiCall(endpoint);
+            setTimeout(() => {
+                document.body.innerHTML = `
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#0b0f19; color:#94a3b8; font-family:monospace; text-align:center;">
+                        <h1 style="color:#ef4444; font-size:24px; margin-bottom:12px;">SYSTEM SHUT DOWN</h1>
+                        <p style="font-size:14px; max-width:450px; line-height:1.6;">All ROS 2 nodes, edge sensor streams, and dashboard servers have been safely terminated.</p>
+                        <p style="font-size:12px; margin-top:20px; color:#64748b;">To restart, run <code style="color:#38bdf8; background:#1e293b; padding:4px 8px; rounded:4px;">./start_dashboard.sh</code> in your terminal.</p>
+                    </div>
+                `;
+            }, 800);
+            return;
+        }
         apiCall(endpoint);
     }
 }
+
 
 function saveCurrentMap() {
     const mapName = prompt("Enter name for map file (e.g. room_map_1):", `map_${Date.now()}`);
