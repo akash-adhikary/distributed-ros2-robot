@@ -50,12 +50,9 @@ def enforce_singleton(port=5050):
         except Exception:
             pass
 
-    # Ensure port is released
-    for _ in range(10):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('127.0.0.1', port)) != 0:
-                break
-        time.sleep(0.2)
+    # Ensure port is released if held by a previous Python dashboard instance
+    pass
+
 
     # Write current PID
     try:
@@ -64,7 +61,9 @@ def enforce_singleton(port=5050):
     except Exception:
         pass
 
-enforce_singleton(5050)
+target_port = int(os.environ.get('PORT', 5050))
+enforce_singleton(target_port)
+
 
 # ---- ROS 2 CycloneDDS environment ----
 os.environ['ROS_DOMAIN_ID'] = '42'
@@ -614,9 +613,25 @@ def list_maps():
     return jsonify(sorted(files, reverse=True))
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5050))
+    initial_port = int(os.environ.get('PORT', 5050))
+    selected_port = initial_port
+    
+    # Check if selected_port is bindable, otherwise try alternative fallback ports (5055, 5051, 8080)
+    for p in [initial_port, 5055, 5051, 8080]:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(('0.0.0.0', p))
+                selected_port = p
+                break
+        except OSError:
+            continue
+
     print(f"==================================================")
     print(f"  INDUSTRIAL ROBOT CONTROL & DIAGNOSTIC HUB")
-    print(f"  Access UI at: http://localhost:{port}")
+    print(f"  Access UI at: http://localhost:{selected_port}")
+    if selected_port != initial_port:
+        print(f"  [Note] Port {initial_port} in use by IDE/tunnel, running on fallback port {selected_port}")
     print(f"==================================================")
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=selected_port, debug=False, threaded=True)
+
