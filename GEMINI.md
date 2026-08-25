@@ -234,8 +234,9 @@ git commit -m "fix(component): description (#N)"
 gh issue close N --comment "Root cause: ... Solution: ... Files changed: ..."
 ```
 
-**Current issues #1–#6 are all closed. Next issue will be #7.**
+**Current issues #1–#9 are all closed. Next issue will be #10.**
 Check open issues: `gh issue list --state open`
+
 
 ---
 
