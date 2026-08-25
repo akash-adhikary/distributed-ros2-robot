@@ -303,33 +303,42 @@ The regularized map will show clean rectangular rooms instead of fuzzy blobs.
 
 ---
 
-## Part 7: Stop the System
+### 7.1 — CLI Operational Helper Scripts
 
-### 7.1 — Soft reset (keep dashboard running, restart ROS nodes)
+| Situation | Command | What it does |
+|---|---|---|
+| **Normal Launch** | `./start_dashboard.sh` | Cleans previous instances, sets CycloneDDS env, launches Dashboard at http://localhost:5050 |
+| **Clean Restart** | `./restart_dashboard.sh` | Invokes `./stop_dashboard.sh`, waits 1.5s, then re-runs `./start_dashboard.sh` |
+| **SLAM frozen / Reset** | `./kill_all_ros.sh` | Soft reset: kills SLAM, `qos_relay`, and RViz2 while keeping Web UI alive |
+| **Full Emergency Teardown** | `./stop_dashboard.sh` | Forcefully terminates all dashboard, relay, SLAM, and visualizer nodes on host and in DevContainer |
+| **Nuclear CLI Option** | `kill -9 $(lsof -ti:5050 2>/dev/null) && docker exec -t thirsty_burnell rm -f /tmp/my_robot_dashboard.pid` | Clears any external lock or stubborn socket binding |
+
+### 7.2 — Soft reset (keep dashboard running, restart ROS nodes)
 
 Use this if something goes wrong with SLAM or sensors and you want a clean restart:
 
 **Via Web UI:** Click **"Reset Nodes"** button  
-**Via CLI:**
+**Via CLI:** `./kill_all_ros.sh` or:
 ```bash
 curl -X POST http://localhost:5050/api/system/kill_all \
   -H "Content-Type: application/json" -d '{}'
 ```
 
-This kills all ROS 2 processes (`slam_toolbox`, `qos_relay`, RViz2, sensor nodes) but leaves the Flask dashboard running at port 5050. You can then restart SLAM fresh.
+This kills all ROS 2 processes (`slam_toolbox`, `qos_relay`, RViz2) but leaves the Flask dashboard running at port 5050.
 
-### 7.2 — Full shutdown (everything off)
+### 7.3 — Full shutdown (everything off)
 
 **Via Web UI:** Click **"Shutdown All & Exit"** button  
-**Via CLI:**
+**Via CLI:** `./stop_dashboard.sh` or:
 ```bash
 curl -X POST http://localhost:5050/api/system/shutdown_all \
   -H "Content-Type: application/json" -d '{}'
 ```
 
-This kills all ROS nodes AND exits the Flask app. Port 5050 is released. The Uno Q Docker container continues running until you SSH in and stop it.
+This kills all ROS nodes AND exits the Flask app. Port 5050 is released.
 
-### 7.3 — Stop the Uno Q container
+### 7.4 — Stop the Uno Q container
+
 
 SSH back into the Uno Q and stop the sensor container:
 ```bash

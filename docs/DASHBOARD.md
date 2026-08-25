@@ -240,13 +240,25 @@ curl -X POST http://localhost:5050/api/rviz/stop \
 
 ---
 
-### System Operations Panel
+#### Operational Helper Scripts Matrix
+
+| Scenario | Command | Effect |
+|---|---|---|
+| **Normal Launch** | `./start_dashboard.sh` | Cleans previous instances via container bash pkill, sets CycloneDDS env, launches Dashboard at http://localhost:5050 |
+| **Clean Restart** | `./restart_dashboard.sh` | Runs `./stop_dashboard.sh`, waits 1.5s, then re-runs `./start_dashboard.sh` |
+| **SLAM frozen / Reset** | `./kill_all_ros.sh` | Soft reset: kills SLAM, `qos_relay`, and RViz2 while keeping Web UI alive |
+| **Full Emergency Teardown** | `./stop_dashboard.sh` | Forcefully terminates all dashboard, relay, SLAM, and visualizer nodes on host and in DevContainer |
+| **Nuclear CLI Option** | `kill -9 $(lsof -ti:5050 2>/dev/null) && docker exec -t thirsty_burnell rm -f /tmp/my_robot_dashboard.pid` | Clears any external lock or stubborn socket binding |
 
 #### "Reset Nodes" button — **Soft Reset**
 
 Kills all ROS 2 processes (SLAM, qos_relay, RViz2, sensor nodes) but **keeps the Flask dashboard running**. Use this when something is stuck and you want to restart SLAM without restarting the web interface.
 
 ```bash
+# Via UI: Click "Reset Nodes"
+# Via CLI:
+./kill_all_ros.sh
+# or:
 curl -X POST http://localhost:5050/api/system/kill_all \
   -H "Content-Type: application/json" -d '{}'
 
@@ -259,11 +271,16 @@ curl -X POST http://localhost:5050/api/system/kill_all \
 Kills all ROS nodes **AND exits `app.py`**. Port 5050 is fully released. Use when ending the session or when the dashboard itself needs to be restarted.
 
 ```bash
+# Via UI: Click "Shutdown All & Exit"
+# Via CLI:
+./stop_dashboard.sh
+# or:
 curl -X POST http://localhost:5050/api/system/shutdown_all \
   -H "Content-Type: application/json" -d '{}'
 ```
 
 After this, restart with: `./start_dashboard.sh`
+
 
 ---
 

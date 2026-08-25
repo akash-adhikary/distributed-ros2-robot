@@ -246,12 +246,16 @@ Every agent must know the role of every key file before touching it.
 ### Root Level
 | File | Role | Touch when... |
 |------|------|---------------|
-| `start_dashboard.sh` | Single entry point — detects host/container, sets env vars, kills old instance, runs `app.py` | Changing startup behavior |
+| `start_dashboard.sh` | Single entry point — detects host/container, cleans old instances with bash pkill, sets env vars, runs `app.py` | Changing startup behavior |
+| `stop_dashboard.sh` | Full teardown — terminates all ROS nodes, bridges, RViz2, and Flask on both host and inside container | Halting all system components |
+| `restart_dashboard.sh` | Clean restart — invokes stop_dashboard.sh then start_dashboard.sh | Restarting cleanly after error |
+| `kill_all_ros.sh` | Soft reset — kills SLAM, TF relays, and visualizers while keeping dashboard alive | Resetting SLAM/TF state |
 | `launch_all.sh` | Alternative — manually launches all ROS nodes without the web dashboard | Debugging without dashboard |
 | `start_mapping.sh` | Headless SLAM only — no dashboard | Batch mapping without UI |
 | `cyclonedds.xml` | CycloneDDS config — network interface name, peer IPs, multicast settings | Changing network layout |
 | `GEMINI.md` / `AGENTS.md` | **This file** — AI agent memory | Any new lesson, failure, or rule |
 | `AI_AGENT_CONTEXT_AND_DEVELOPMENT_LOG.md` | Full dev history — all decisions and post-mortems | After closing GitHub issues |
+
 
 ### `src/my_robot_dashboard/`
 | File | Role | Touch when... |
@@ -637,6 +641,9 @@ All 16 failures and their exact solutions. Read these before attempting ANY rela
 | 14 | No emergency shutdown — had to hunt terminal windows | System had no way to stop all processes remotely; stale nodes accumulated across sessions | `POST /api/system/kill_all` (pkill all ROS) and `POST /api/system/shutdown_all` (kill + exit app.py) |
 | 15 | Flask `400 Bad Request` on button clicks | `request.json` raises Werkzeug 400 when POST body is empty (0 bytes) or Content-Type missing | Replace ALL `request.json` with `request.get_json(silent=True) or {}` throughout `app.py` |
 | 16 | Browser `JSON.parse SyntaxError` on button clicks | Frontend called `res.json()` directly. When server returned HTML error page (due to #15), parsing HTML as JSON threw SyntaxError. Real error was invisible | `const text = await res.text(); try { return JSON.parse(text); } catch(e) {...}` + bump `?v=X.X` |
+| 17 | Container child process survival during pkill | `docker exec -t ... pkill ...` without a bash subshell fails to parse regex flags properly in some environments, leaving child ROS nodes (`qos_relay.py`, etc.) running in background | Always wrap container process cleanup in an explicit bash string: `docker exec -t thirsty_burnell bash -c 'pkill -9 -f "..." 2>/dev/null \|\| true'` |
+| 18 | Rogue port fallback creating split-brain ROS nodes | Automatically jumping to random ports (5055, 5051) when 5050 is held leaves old ROS nodes running unnoticed, corrupting RViz visualization and wasting RAM | Enforce explicit port termination. Never spawn competing dashboard nodes on dynamic ports without terminating all prior ROS nodes first |
+
 
 ---
 

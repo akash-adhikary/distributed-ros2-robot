@@ -124,8 +124,12 @@ my_robot_ws/
 ├── 📄 AI_AGENT_CONTEXT_AND_DEVELOPMENT_LOG.md  ← Full project dev log
 ├── 📄 cyclonedds.xml                   ← CycloneDDS network config (peer IPs)
 ├── 📄 start_dashboard.sh               ← ⭐ MAIN ENTRY POINT — run this!
+├── 📄 stop_dashboard.sh                ← Full teardown — stops dashboard and all ROS nodes
+├── 📄 restart_dashboard.sh             ← Clean restart — stop then start dashboard
+├── 📄 kill_all_ros.sh                  ← Soft reset — kills SLAM/TF while keeping UI alive
 ├── 📄 start_mapping.sh                 ← Alternative: headless SLAM only
 ├── 📄 launch_all.sh                    ← Launch all ROS nodes manually
+
 │
 ├── src/
 │   ├── my_robot_dashboard/             ← Flask Web Dashboard (Port 5050)
@@ -490,16 +494,25 @@ From the Web UI:
 5. When finished mapping, click **"Save Map"** in the Web UI
 6. (Optional) Click **"Snap to 90° Boxy Walls"** to regularize the map into clean orthogonal room shapes
 
-### 5. Emergency controls
+### 5. Operational helper scripts & Emergency controls
 
-- **Reset Nodes** (Web UI button or CLI): Kills all ROS processes and restarts clean
+| Situation | Command | Description |
+|---|---|---|
+| **Normal Launch** | `./start_dashboard.sh` | Cleans previous instances, sets CycloneDDS env, launches Dashboard at http://localhost:5050 |
+| **Clean Restart** | `./restart_dashboard.sh` | Invokes `./stop_dashboard.sh`, waits 1.5s, then re-runs `./start_dashboard.sh` |
+| **SLAM frozen / Reset** | `./kill_all_ros.sh` | Soft reset: kills SLAM, `qos_relay`, and RViz2 while keeping Web UI alive |
+| **Full Emergency Teardown** | `./stop_dashboard.sh` | Forcefully terminates all dashboard, relay, SLAM, and visualizer nodes on host and in DevContainer |
+| **Nuclear CLI Option** | `kill -9 $(lsof -ti:5050 2>/dev/null) && docker exec -t thirsty_burnell rm -f /tmp/my_robot_dashboard.pid` | Clears any external lock or stubborn socket binding |
+
+- **Reset Nodes** (Web UI button or CLI): `./kill_all_ros.sh` or:
   ```bash
   curl -X POST http://localhost:5050/api/system/kill_all
   ```
-- **Full Shutdown** (Web UI button or CLI): Kills everything including the dashboard server
+- **Full Shutdown** (Web UI button or CLI): `./stop_dashboard.sh` or:
   ```bash
   curl -X POST http://localhost:5050/api/system/shutdown_all
   ```
+
 
 ---
 
