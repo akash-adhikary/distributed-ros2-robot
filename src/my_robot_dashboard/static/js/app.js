@@ -188,31 +188,47 @@ function updateUI(data) {
     }
 
 
-    // Rates
+    // Rates (Fixed 1 decimal place with tabular numbers for rock-solid stability)
+    const imuRateFormatted = Number(data.imu_rate || 0).toFixed(1);
+    const lidarRateFormatted = Number(data.lidar_rate || 0).toFixed(1);
+
     const imuBadge = document.getElementById('imu-badge');
-    imuBadge.innerHTML = `<span class="w-2 h-2 rounded-full ${data.imu_running ? 'bg-emerald-500' : 'bg-slate-500'} mr-2"></span> IMU: ${data.imu_rate} Hz`;
-    document.getElementById('imu-hz-text').innerText = `${data.imu_rate} Hz`;
+    imuBadge.innerHTML = `<span class="w-2 h-2 rounded-full ${data.imu_running ? 'bg-emerald-500' : 'bg-slate-500'} mr-2"></span> IMU: <span class="font-mono ml-1 inline-block min-w-[3.2rem] text-right">${imuRateFormatted}</span> Hz`;
+    document.getElementById('imu-hz-text').innerText = `${imuRateFormatted} Hz`;
 
     const lidarBadge = document.getElementById('lidar-badge');
-    lidarBadge.innerHTML = `<span class="w-2 h-2 rounded-full ${data.lidar_running ? 'bg-emerald-500' : 'bg-slate-500'} mr-2"></span> Lidar: ${data.lidar_rate} Hz`;
-    document.getElementById('lidar-hz-text').innerText = `${data.lidar_rate} Hz`;
+    lidarBadge.innerHTML = `<span class="w-2 h-2 rounded-full ${data.lidar_running ? 'bg-emerald-500' : 'bg-slate-500'} mr-2"></span> Lidar: <span class="font-mono ml-1 inline-block min-w-[3.2rem] text-right">${lidarRateFormatted}</span> Hz`;
+    document.getElementById('lidar-hz-text').innerText = `${lidarRateFormatted} Hz`;
 
     document.getElementById('imu-state-tag').innerText = data.imu_running ? 'Running' : 'Stopped';
     document.getElementById('lidar-state-tag').innerText = data.lidar_running ? 'Scanning' : 'Stopped';
 
-    // 2. 3D IMU Euler Angles
-    document.getElementById('val-roll').innerText = `${data.roll_deg}°`;
-    document.getElementById('val-pitch').innerText = `${data.pitch_deg}°`;
-    document.getElementById('val-yaw').innerText = `${data.yaw_deg}°`;
+    // 2. 3D IMU Euler Angles (Fixed 1 decimal place with sign alignment)
+    const rollFormatted = Number(data.roll_deg || 0).toFixed(1);
+    const pitchFormatted = Number(data.pitch_deg || 0).toFixed(1);
+    const yawFormatted = Number(data.yaw_deg || 0).toFixed(1);
 
-    // 3. Accelerometer & Gyro
-    document.getElementById('val-ax').innerText = data.acc.x;
-    document.getElementById('val-ay').innerText = data.acc.y;
-    document.getElementById('val-az').innerText = data.acc.z;
+    document.getElementById('val-roll').innerText = `${rollFormatted}°`;
+    document.getElementById('val-pitch').innerText = `${pitchFormatted}°`;
+    document.getElementById('val-yaw').innerText = `${yawFormatted}°`;
 
-    document.getElementById('val-gx').innerText = data.gyro.x;
-    document.getElementById('val-gy').innerText = data.gyro.y;
-    document.getElementById('val-gz').innerText = data.gyro.z;
+    // 3. Accelerometer & Gyro (Fixed 2 decimal places with consistent widths)
+    const ax = Number(data.acc?.x || 0).toFixed(2);
+    const ay = Number(data.acc?.y || 0).toFixed(2);
+    const az = Number(data.acc?.z || 0).toFixed(2);
+
+    document.getElementById('val-ax').innerText = ax;
+    document.getElementById('val-ay').innerText = ay;
+    document.getElementById('val-az').innerText = az;
+
+    const gx = Number(data.gyro?.x || 0).toFixed(2);
+    const gy = Number(data.gyro?.y || 0).toFixed(2);
+    const gz = Number(data.gyro?.z || 0).toFixed(2);
+
+    document.getElementById('val-gx').innerText = gx;
+    document.getElementById('val-gy').innerText = gy;
+    document.getElementById('val-gz').innerText = gz;
+
 
     // 4. Update Three.js Mesh Orientation
     if (imuMesh && data.quat) {
