@@ -194,14 +194,31 @@ def non_blocking_ros_spin():
     try:
         rclpy.init()
         ros_node = DashboardRosNode()
+        last_heartbeat_check = 0.0
         while ros_running and rclpy.ok():
             rclpy.spin_once(ros_node, timeout_sec=0.008)
             now = time.time()
-            telemetry['unoq_online'] = (now - last_imu_update < 2.5) or (now - last_scan_update < 2.5)
+            
+            # Check sensor streams first
+            sensor_active = (now - last_imu_update < 2.5) or (now - last_scan_update < 2.5)
+            if sensor_active:
+                telemetry['unoq_online'] = True
+            else:
+                # Periodic fast ping check every 3.0s if no topics flowing
+                if now - last_heartbeat_check > 3.0:
+                    last_heartbeat_check = now
+                    ip = robot_config['ip']
+                    try:
+                        ping_res = subprocess.run(f"ping -c 1 -W 1 {ip} >/dev/null 2>&1", shell=True)
+                        telemetry['unoq_online'] = (ping_res.returncode == 0)
+                    except Exception:
+                        telemetry['unoq_online'] = False
+
             telemetry['slam_running'] = ('slam_toolbox' in active_processes and active_processes['slam_toolbox'].poll() is None)
             time.sleep(0.01)
     except Exception as e:
         print(f"[ROS Thread] Exception: {e}", file=sys.stderr)
+
 
     finally:
         if ros_node:
