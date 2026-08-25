@@ -1,10 +1,12 @@
 # 🤖 Robot System Architecture Design Document
 
-> **Version**: 1.0 | **Status**: Living Document — Enhancements Welcome
+> **Version**: 2.0 | **Status**: Phase 2 Complete — Phase 3 (Motor Control) In Progress
 >
 > **Purpose**: Technical reference for AI agents and human developers.
 > Defines the distributed system architecture for a ROS 2–based autonomous robot
-> using an Arduino Uno Q (edge SBC) and a development laptop as the compute hub.
+> using an Arduino Uno Q (edge SBC, 192.168.1.17) and a development laptop (192.168.1.15) as the compute hub.
+>
+> **Single entry point:** `./start_dashboard.sh` → open http://localhost:5050
 
 ---
 
@@ -60,58 +62,73 @@
 
 ## 🖥️ 3. Node Distribution
 
-### 3.1 Laptop Nodes (High Computation, Dev Environment)
+### 3.1 Laptop Nodes — DevContainer `thirsty_burnell` (192.168.1.15)
 
-| Node | Package | Responsibility |
-|------|---------|----------------|
-| `slam_toolbox` | `slam_toolbox` | Build and update occupancy map from `/scan` |
-| `nav2_bringup` | `nav2_bringup` | Path planning (global + local), costmaps, AMCL |
-| `rviz2` | `rviz2` | Visualization: map, scan, TF, goals |
-| `gazebo_sim` | `ros_gz` | Simulation only (dev/test) — not used in production |
-| `map_server` | `nav2_map_server` | Serve the pre-saved map to AMCL |
+| Node / Script | Package | Responsibility | Status |
+|---|---|---|---|
+| `app.py` (Flask Dashboard) | `my_robot_dashboard` | Web UI + REST API + SSE telemetry @ port 5050 | ✅ Running |
+| `qos_relay.py` | `my_robot_nav` | 50 Hz TF broadcaster (map→odom→base_link→laser) + IMU tilt scan gating | ✅ Running |
+| `slam_toolbox` | `slam_toolbox` | Async 2D SLAM — builds and updates occupancy map from `/scan_reliable` | ✅ Running |
+| `map_regularizer.py` | `my_robot_nav` | Post-processing: Manhattan 90° wall snapper, SVG CAD export | ✅ On-demand |
+| `rviz2` | `rviz2` | 3D visualization: map, scan, TF, IMU orientation | ✅ On-demand |
+| `nav2_bringup` | `nav2_bringup` | Full Nav2 stack (planned — Phase 3) | 🔲 Not yet |
 
-> **Why laptop?** Nav2 easily peaks at 800 MB RAM + heavy CPU. Offloading this keeps Uno Q free for real-time tasks.
+> **Why laptop?** slam_toolbox peaks at 400–800 MB RAM. map_regularizer uses OpenCV. The Flask dashboard requires Python 3.10+. All offloaded to keep Uno Q free for real-time sensor tasks.
 
-### 3.2 Uno Q Nodes (Hardware Close, Real-Time)
+### 3.2 Uno Q Nodes — Docker container `rplidar` (192.168.1.17)
 
-| Node | Package | Responsibility | RAM Estimate |
-|------|---------|----------------|-------------|
-| `rplidar_node` | `rplidar_ros` | Publish `/scan` from physical RPLIDAR C1 | ~30 MB |
-| `serial_bridge` | custom node | Translate `cmd_vel` → motor controller serial commands | ~20 MB |
-| `robot_state_publisher` | `robot_state_publisher` | Publish `/tf` from URDF (static only) | ~15 MB |
-| `static_tf_broadcaster` | `tf2_ros` | Broadcast `odom → base_footprint` when no encoders | ~5 MB |
+| Node / Script | Package | Responsibility | Frequency |
+|---|---|---|---|
+| `rplidar_node` | `rplidar_ros` | Publish `/scan` from RPLidar C1 at `/dev/ttyUSB0` @ 460800 baud | 10 Hz |
+| `imu_publisher.py` | custom | Read BNO086 data from `arduino-router` IPC socket, publish `/imu/data` | 100 Hz |
+| `robot_state_publisher` | future | Publish TF from URDF static transforms | future |
 
-> **Total Uno Q RAM budget**: ~70–100 MB active ROS nodes (well within 2 GB limit).
+> **Total Uno Q RAM budget**: ~60 MB active (well within 2 GB limit).
+
+
 
 ---
 
 ## 📡 4. Topic Architecture
 
 ```
-Laptop (Nav2) ──────→ /cmd_vel ──────────────→ Uno Q (serial_bridge)
-                                                       │
-                                               Motor Controller (USB)
+Uno Q (rplidar_node) ──► /scan (10 Hz, BEST_EFFORT QoS) ──────────────────► Laptop
+                                                                               │
+Uno Q (imu_publisher) ──► /imu/data (100 Hz) ─────────────────────────────► Laptop
+                                                                               │
+Laptop (qos_relay.py) ──► /scan_reliable (10 Hz, RELIABLE QoS) ───────────► slam_toolbox
+Laptop (qos_relay.py) ──► /imu_reliable (100 Hz, RELIABLE QoS) ───────────► future nodes
+Laptop (qos_relay.py) ──► /tf: odom → base_link (50 Hz dynamic TF) ───────► slam_toolbox, RViz2
+Laptop (qos_relay.py) ──► /tf: base_link → laser (static TF) ─────────────► slam_toolbox, RViz2
 
-Uno Q (rplidar) ──→ /scan ───────────────────→ Laptop (Nav2 costmaps, SLAM)
+Laptop (slam_toolbox) ──► /map (OccupancyGrid, async) ────────────────────► RViz2, map_saver
+Laptop (slam_toolbox) ──► /tf: map → odom ─────────────────────────────────► RViz2
 
-Uno Q (odometry) ─→ /odom ───────────────────→ Laptop (AMCL localization)
-
-Laptop (Nav2) ──────→ /goal_pose ─────────────→ bt_navigator (Laptop)
-
-Laptop (map_server) → /map ────────────────────→ RViz2, AMCL, costmaps
+Laptop (nav2) ──────────► /cmd_vel ────────────────────────────────────────► Uno Q (Phase 3)
+Uno Q (encoders) ────────► /odom ──────────────────────────────────────────► Laptop (Phase 3)
 ```
 
-### Critical Topics Reference
+### Current Active Topics Reference
 
-| Topic | Type | Publisher | Subscribers |
-|-------|------|-----------|-------------|
-| `/scan` | `sensor_msgs/LaserScan` | Uno Q rplidar_node | Nav2 costmaps, SLAM, RViz2 |
-| `/odom` | `nav_msgs/Odometry` | Uno Q (encoder bridge or static) | Nav2 AMCL, controller |
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 collision_monitor | Uno Q serial_bridge |
-| `/map` | `nav_msgs/OccupancyGrid` | Laptop map_server | AMCL, costmaps, RViz2 |
-| `/tf` | `tf2_msgs/TFMessage` | robot_state_publisher | All navigation nodes |
-| `/initialpose` | `PoseWithCovarianceStamped` | RViz2 2D Pose Estimate | AMCL |
-| `/goal_pose` | `geometry_msgs/PoseStamped` | RViz2 2D Goal Pose | bt_navigator |
+| Topic | Type | Publisher | Subscribers | Rate |
+|-------|------|-----------|-------------|------|
+| `/scan` | `sensor_msgs/LaserScan` | Uno Q `rplidar_node` | `qos_relay.py` | 10 Hz |
+| `/imu/data` | `sensor_msgs/Imu` | Uno Q `imu_publisher.py` | `qos_relay.py` | 100 Hz |
+| `/scan_reliable` | `sensor_msgs/LaserScan` | `qos_relay.py` | `slam_toolbox`, RViz2 | 10 Hz |
+| `/imu_reliable` | `sensor_msgs/Imu` | `qos_relay.py` | future | 100 Hz |
+| `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | RViz2, map_saver | async |
+| `/tf` (odom→base_link) | `tf2_msgs/TFMessage` | `qos_relay.py` | all nav nodes | 50 Hz |
+| `/tf` (map→odom) | `tf2_msgs/TFMessage` | `slam_toolbox` | all nav nodes | async |
+
+### Future Topics (Phase 3)
+
+| Topic | Type | Direction |
+|-------|------|-----------|
+| `/cmd_vel` | `geometry_msgs/Twist` | Laptop → Uno Q motor controller |
+| `/odom` | `nav_msgs/Odometry` | Uno Q encoder bridge → Laptop Nav2 |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | RViz2 → Nav2 bt_navigator |
+
+
 
 ---
 
@@ -181,28 +198,46 @@ Both with `Restart=always`.
 
 ## 🚀 8. Phase-by-Phase Deployment Plan
 
-### Phase 1 — Sensor Integration ✅ (Mostly Done)
+### Phase 1 — Sensor Integration ✅ COMPLETE
+
 - [x] RPLIDAR C1 working with ROS 2 driver on laptop
-- [x] Nav2 simulation tested and validated
+- [x] Nav2 simulation tested and validated in Gazebo Harmonic
 - [x] Map saved from Gazebo simulation
 - [x] Uno Q pendrive mounted with full read/write
-- [ ] RPLIDAR driver installed and tested on Uno Q
-- [ ] DDS multi-machine discovery verified between laptop and Uno Q
+- [x] RPLIDAR C1 driver installed and tested on Uno Q (Docker container `rplidar`)
+- [x] CycloneDDS multi-machine discovery verified (Laptop ↔ Uno Q Wi-Fi)
+- [x] BNO086 9-DOF IMU wired and firmware flashed (`BnoTest.ino`)
+- [x] `imu_publisher.py` publishing `/imu/data` @ 100 Hz from Uno Q
+- [x] arduino-router IPC bridge running at `/var/run/arduino-router.sock`
 
-### Phase 2 — Hardware Bridge
-- [ ] Uno Q publishes `/scan` over Wi-Fi to laptop Nav2
-- [ ] Real-world map building with RPLIDAR over LAN
+### Phase 2 — SLAM Fusion & Control Hub ✅ COMPLETE
 
-### Phase 3 — Motor Control
-- [ ] `serial_bridge` translates `/cmd_vel` to motor serial commands
-- [ ] Odometry published from wheel encoders
-- [ ] Full closed-loop: Laptop plans → Uno Q executes
+- [x] `qos_relay.py` broadcasting 50 Hz `odom → base_link` TF
+- [x] IMU tilt-aware scan gating (> 7.5° tilt gates rays > 0.40 m height deviation)
+- [x] `slam_toolbox` multi-room SLAM tuned (12m loop closure, 30 scan buffer, 0.80m correlation)
+- [x] Full 2D maps built and saved by walking handheld through multiple rooms
+- [x] Flask Web Dashboard (`app.py`) running at port 5050
+- [x] All sensor controls, SLAM controls, and emergency shutdown via REST API + Web UI
+- [x] `map_regularizer.py` Manhattan 90° wall snapper with SVG CAD export
+- [x] PID singleton process guard + graceful takeover
+- [x] `request.get_json(silent=True)` defensive REST pattern throughout
+- [x] Safe JS `res.text()` → try/catch JSON parsing in frontend
 
-### Phase 4 — Autonomy & Polish
-- [ ] SLAM + Autonomous navigation on physical robot
-- [ ] Frontier exploration (auto-mapping)
-- [ ] Systemd auto-start on Uno Q boot
-- [ ] Remote monitoring dashboard (optional)
+### Phase 3 — Motor Control ⬅️ CURRENT PHASE (Not Started)
+
+- [ ] Design and wire motor controller to Uno Q (USB serial)
+- [ ] `serial_bridge` node: translate `/cmd_vel` (Twist) → motor PWM serial commands
+- [ ] Wheel encoders publish `/odom` from Uno Q
+- [ ] Full closed-loop: Laptop Nav2 plans → `/cmd_vel` → Uno Q motor controller → robot moves
+
+### Phase 4 — Autonomous Navigation & Polish
+
+- [ ] Nav2 full stack: global planner, local planner, AMCL localization
+- [ ] Frontier exploration (`explore_lite`) for automatic room mapping
+- [ ] Systemd service for auto-start on Uno Q boot
+- [ ] Battery state publishing from ADC voltage monitor
+- [ ] Map export to multiple formats (SVG, DXF, PNG with scale bar)
+
 
 ---
 
