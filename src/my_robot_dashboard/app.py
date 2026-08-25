@@ -204,15 +204,17 @@ def non_blocking_ros_spin():
             if sensor_active:
                 telemetry['unoq_online'] = True
             else:
-                # Periodic fast ping check every 3.0s if no topics flowing
-                if now - last_heartbeat_check > 3.0:
+                # Periodic fast TCP probe (Port 22 SSH) every 2.0s if no topics flowing
+                if now - last_heartbeat_check > 2.0:
                     last_heartbeat_check = now
                     ip = robot_config['ip']
                     try:
-                        ping_res = subprocess.run(f"ping -c 1 -W 1 {ip} >/dev/null 2>&1", shell=True)
-                        telemetry['unoq_online'] = (ping_res.returncode == 0)
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                            s.settimeout(0.6)
+                            telemetry['unoq_online'] = (s.connect_ex((ip, 22)) == 0)
                     except Exception:
                         telemetry['unoq_online'] = False
+
 
             telemetry['slam_running'] = ('slam_toolbox' in active_processes and active_processes['slam_toolbox'].poll() is None)
             time.sleep(0.01)
