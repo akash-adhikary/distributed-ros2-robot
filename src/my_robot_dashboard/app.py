@@ -521,19 +521,23 @@ def shutdown_all():
     Complete Full System Shutdown: Terminates all ROS 2 activity on Laptop & Uno Q,
     and terminates the Flask Dashboard server itself, exiting start_dashboard.sh cleanly.
     """
-    # 1. Kill all local processes
-    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_dead_reckoning|qos_relay|tf2_ros|ros2' 2>/dev/null || true", shell=True)
+    # 1. Kill all local processes and discovery daemon
+    subprocess.run("pkill -9 -f 'async_slam_toolbox_node|rviz2|imu_dead_reckoning|qos_relay|tf2_ros|sync_slam_toolbox_node' 2>/dev/null || true", shell=True)
+    subprocess.run("ros2 daemon stop 2>/dev/null || true", shell=True)
     
     # 2. Kill edge sensors on Uno Q
     cmd_unoq = "docker exec -t rplidar pkill -9 -f 'rplidar_node|imu_publisher|ros2' 2>/dev/null || true"
     ssh_unoq_cmd(cmd_unoq)
 
-    # 3. Clean up PID file
+    # 3. Clean up PID and lock files
     try:
         if os.path.exists(PIDFILE_PATH):
             os.remove(PIDFILE_PATH)
+        if os.path.exists(LOCKFILE_PATH):
+            os.remove(LOCKFILE_PATH)
     except Exception:
         pass
+
 
     def stop_server():
         time.sleep(0.5)
