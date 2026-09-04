@@ -32,7 +32,7 @@ else
     fi
     echo "Launching Dashboard inside DevContainer ($CONTAINER_ID)..."
     xhost +local: 2>/dev/null || true
-    docker exec -it -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 -v /tmp/.X11-unix:/tmp/.X11-unix $CONTAINER_ID bash -c "
+    docker exec -it -e DISPLAY=$DISPLAY -e QT_X11_NO_MITSHM=1 $CONTAINER_ID bash -c "
         source /opt/ros/jazzy/setup.bash
         source /home/ros/my_robot_ws/install/setup.bash 2>/dev/null || true
         export ROS_DOMAIN_ID=42
@@ -44,4 +44,5 @@ else
         
         python3 /home/ros/my_robot_ws/src/my_robot_dashboard/app.py
     "
+
 fi
